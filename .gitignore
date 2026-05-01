@@ -12,3 +12,6 @@ data/
 playwright-report/
 test-results/
 .worktrees/
+*.json
+*.jsonlines
+*.csv

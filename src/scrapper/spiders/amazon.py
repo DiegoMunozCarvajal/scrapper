@@ -10,7 +10,7 @@ class AmazonSpider(scrapy.Spider):
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 1,
-        "DOWNLOAD_DELAY": 4,
+        "DOWNLOAD_DELAY": 5,
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     }
 

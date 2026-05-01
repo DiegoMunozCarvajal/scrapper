@@ -5,7 +5,7 @@ description = "Multi-site web scraper — Reddit, Quora, Amazon, MercadoLibre, H
 requires-python = ">=3.11"
 dependencies = [
     "scrapy>=2.11",
-    "scrapy-playwright>=0.0.40",
+    "scrapy-playwright-stealth>=0.1",
     "playwright>=1.45",
     "supabase>=2.7",
     "beautifulsoup4>=4.12",

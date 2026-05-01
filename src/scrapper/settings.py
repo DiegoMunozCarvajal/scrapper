@@ -33,8 +33,8 @@ RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 DOWNLOAD_HANDLERS = {
-    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
-    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "http": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
+    "https": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
 }
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
@@ -53,6 +53,7 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 EXTENSIONS = {
+    "scrapper.extensions.StatsLogger": 400,
     "scrapper.extensions.ErrorAlerter": 500,
 }
 
@@ -65,6 +66,11 @@ ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
 
 LOG_LEVEL = "INFO"
 LOG_FILE = "scrapy.log"
+
+# ── Cookie persistence (for login sites) ──────
+COOKIE_SAVE_ENABLED = True
+COOKIE_LOAD_ENABLED = True
+COOKIE_DB_PATH = "cookies/".strip("/")
 
 DOWNLOAD_TIMEOUT = 30
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000

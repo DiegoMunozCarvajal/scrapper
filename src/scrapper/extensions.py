@@ -1,10 +1,47 @@
 """Scrapy extensions for monitoring and alerting."""
 
 import json
+import time
 from urllib.request import Request, urlopen
 
 from scrapy import signals
 from loguru import logger
+
+
+class StatsLogger:
+    """Log scraping stats at spider completion."""
+
+    def __init__(self):
+        self.start_time = None
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        ext = cls()
+        crawler.signals.connect(ext.spider_opened, signal=signals.spider_opened)
+        crawler.signals.connect(ext.spider_closed, signal=signals.spider_closed)
+        return ext
+
+    def spider_opened(self, spider):
+        self.start_time = time.time()
+        logger.info(f"[{spider.name}] Spider opened")
+
+    def spider_closed(self, spider, reason):
+        stats = spider.crawler.stats
+        elapsed = time.time() - self.start_time if self.start_time else 0
+        items = stats.get_value("item_scraped_count", 0)
+
+        logger.info(
+            f"[{spider.name}] Spider closed: {reason} | "
+            f"(items={items}, elapsed={elapsed:.1f}s, "
+            f"rate={items/elapsed*60:.1f}/min if elapsed else 0)"
+        )
+
+        logger.info(
+            f"[{spider.name}] Stats: "
+            f"responses={stats.get_value('response_received_count', 0)}, "
+            f"errors={stats.get_value('log_count/ERROR', 0)}, "
+            f"items={items}"
+        )
 
 
 class ErrorAlerter:
