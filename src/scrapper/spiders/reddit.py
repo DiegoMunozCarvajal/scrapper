@@ -107,7 +107,7 @@ class RedditSpider(scrapy.Spider):
         if not post_url.startswith("http"):
             post_url = f"https://old.reddit.com{post_url}"
 
-        score_text = response.css("span.score::text").get("")
+        score_text = response.css("div.score.unvoted::text").get("")
         try:
             score = int(score_text) if score_text else 0
         except (ValueError, TypeError):
@@ -116,7 +116,7 @@ class RedditSpider(scrapy.Spider):
         comment_text = response.css("a.comments::text").get("")
         try:
             comment_count = (
-                int(comment_text.split()[0]) if comment_text and comment_text.split() else 0
+                int(comment_text.replace(",", "").split()[0]) if comment_text and comment_text.split() else 0
             )
         except (ValueError, IndexError):
             comment_count = 0
