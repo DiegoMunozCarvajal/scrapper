@@ -16,7 +16,7 @@ class MercadoLibreSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "laptop")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://listado.mercadolibre.com.ico/{query.replace(' ', '-')}"
+        url = f"https://listado.mercadolibre.com.co/{query.replace(' ', '-')}"
         yield scrapy.Request(
             url,
             meta={"playwright": True, "query": query, "limit": limit, "count": 0},

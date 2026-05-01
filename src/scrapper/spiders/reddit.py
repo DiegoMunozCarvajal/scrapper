@@ -24,23 +24,30 @@ class RedditSpider(scrapy.Spider):
         limit = response.meta["limit"]
         count = response.meta["count"]
 
-        articles = response.css("article")
-        for el in articles:
+        cards = response.css("div.search-result-link")
+        for card in cards:
             if count >= limit:
                 return
 
-            title_el = el.css('a[slot="title"]')
+            title_el = card.css("a.search-title")
             title = title_el.css("::text").get("")
-            href = title_el.css("::attr(href)").get("")
-            url = f"https://old.reddit.com{href}" if href else ""
+            url = title_el.css("::attr(href)").get("")
 
-            author = el.css('a[href*="/user/"]::text').get("")
+            author = card.css("a.author::text").get("")
 
-            score_text = el.css('[data-testid="post-score"]::text').get("0")
+            score_text = card.css("span.search-score::text").get("0")
             try:
-                score = int(score_text)
-            except (ValueError, TypeError):
+                score = int(score_text.split()[0])
+            except (ValueError, TypeError, IndexError):
                 score = 0
+
+            comment_text = card.css("a.search-comments::text").get("0 comments")
+            try:
+                comment_count = int(comment_text.split()[0])
+            except (ValueError, TypeError, IndexError):
+                comment_count = 0
+
+            content = "".join(card.css("div.md *::text").getall()).strip()
 
             if title and url:
                 count += 1
@@ -49,9 +56,9 @@ class RedditSpider(scrapy.Spider):
                     url=url,
                     title=title.strip(),
                     author=author.strip() if author else "",
-                    content="",
+                    content=content.strip() if content else "",
                     score=score,
-                    comment_count=0,
+                    comment_count=comment_count,
                     metadata={"query": query},
                 )
 

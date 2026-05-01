@@ -5,7 +5,7 @@ from ..items import PostItem
 class QuoraSpider(scrapy.Spider):
     name = "quora"
     site = "quora"
-    site_style = "post"
+    site_type = "post"
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 1,
@@ -15,8 +15,8 @@ class QuoraSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "python")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://www.quora.com/Responses?={query}&type=question"
-        yield scrapy. Request(
+        url = f"https://www.quora.com/search?q={query}&type=question"
+        yield scrapy.Request(
             url,
             meta={"playwright": True, "query": query, "limit": limit, "count": 0},
         )
@@ -26,7 +26,7 @@ class QuoraSpider(scrapy.Spider):
         query = response.meta["query"]
         count = response.meta["count"]
 
-        cards = response.css('[class*="qu- bg--white"]')
+        cards = response.css('[class*="qu-bg--white"]')
         for card in cards:
             if count >= limit:
                 return

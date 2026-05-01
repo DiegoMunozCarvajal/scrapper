@@ -1,4 +1,4 @@
-from src.scrapper.items import PostItem, ProductItem
+from scrapper.items import PostItem, ProductItem
 
 
 def test_post_item_creation():
