@@ -33,16 +33,22 @@ RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 
 # Playwright download handler (required for JS rendering)
 DOWNLOAD_HANDLERS = {
-    "http": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
-    "https": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
+    "http": "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler",
+    "https": "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler",
 }
 
 # Playwright config
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
-PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
+PLAYWRIGHT_LAUNCH_OPTIONS = {
+    "headless": os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
+    "args": ["--disable-blink-features=AutomationControlled"],
+}
 PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 4
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000
 PLAYWRIGHT_ELEM_WAIT_TIMEOUT = 5000
+PLAYWRIGHT_HUMAN_SIMULATION = os.getenv(
+    "PLAYWRIGHT_HUMAN_SIMULATION", "true"
+).lower() in ("true", "1", "yes")
 
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
