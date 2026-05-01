@@ -1,4 +1,5 @@
 import scrapy
+from supabase import create_client
 from ..items import PostItem
 
 
@@ -12,6 +13,26 @@ class RedditSpider(scrapy.Spider):
         "CONCURRENT_REQUESTS": 1,
         "DOWNLOAD_DELAY": 2,
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cutoff_date = None
+        self._load_cutoff_date()
+
+    def _load_cutoff_date(self):
+        supabase_url = self.settings.get("SUPABASE_URL")
+        supabase_key = self.settings.get("SUPABASE_KEY")
+        query = getattr(self, "query", "python")
+        
+        if supabase_url and supabase_key:
+            try:
+                client = create_client(supabase_url, supabase_key)
+                result = client.table("posts").select("scraped_at").eq("site", "reddit").eq("metadata->>'query'", query).order("scraped_at", desc=True).limit(1).execute()
+                if result.data:
+                    self.cutoff_date = result.data[0].get("scraped_at")
+                    self.logger.info(f"Incremental mode: cutoff date = {self.cutoff_date}")
+            except Exception as e:
+                self.logger.warning(f"Could not load cutoff date: {e}")
 
     def start_requests(self):
         query = getattr(self, "query", "python")
@@ -49,27 +70,40 @@ class RedditSpider(scrapy.Spider):
                     meta={"query": query, "limit": limit, "count": count},
                 )
 
-    def parse_post(self, response):
-        """Follow post URL to extract full content + top comment."""
-        content = "".join(response.css("div.md *::text").getall()).strip()
+def parse_post(self, response):
+    """Follow post URL to extract full content + top comment."""
+    from dateutil import parser as date_parser
+    
+    post_time_str = response.css("time::attr(datetime)").get()
+    if post_time_str and self.cutoff_date:
+        try:
+            post_time = date_parser.parse(post_time_str)
+            cutoff = date_parser.parse(self.cutoff_date)
+            if post_time < cutoff:
+                self.logger.info(f"Stopping: post {post_time} older than cutoff {self.cutoff_date}")
+                return
+        except Exception:
+            pass
 
-        top_comment = ""
-        comments = response.css("div.commentarea div.md")
-        if comments:
-            first_comment = comments[0]
-            top_comment = "".join(first_comment.css("*::text").getall()).strip()
+    content = "".join(response.css("div.md *::text").getall()).strip()
 
-        post_url = response.url
-        if not post_url.startswith("http"):
-            post_url = f"https://old.reddit.com{post_url}"
+    top_comment = ""
+    comments = response.css("div.commentarea div.md")
+    if comments:
+        first_comment = comments[0]
+        top_comment = "".join(first_comment.css("*::text").getall()).strip()
 
-        yield PostItem(
-            site=self.site,
-            url=post_url,
-            title=response.css("a.title::text").get("").strip(),
-            author=response.css("a.author::text").get("").strip(),
-            content=content,
-            score=0,
-            comment_count=0,
-            metadata={"type": "detail", "top_comment": top_comment[:500]},
-        )
+    post_url = response.url
+    if not post_url.startswith("http"):
+        post_url = f"https://old.reddit.com{post_url}"
+
+    yield PostItem(
+        site=self.site,
+        url=post_url,
+        title=response.css("a.title::text").get("").strip(),
+        author=response.css("a.author::text").get("").strip(),
+        content=content,
+        score=0,
+        comment_count=0,
+        metadata={"type": "detail", "top_comment": top_comment[:500], "query": response.meta.get("query")},
+    )

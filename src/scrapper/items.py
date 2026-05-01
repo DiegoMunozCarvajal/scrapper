@@ -1,4 +1,5 @@
 import scrapy
+from datetime import datetime, timezone
 
 
 class PostItem(scrapy.Item):
@@ -11,6 +12,7 @@ class PostItem(scrapy.Item):
     comment_count = scrapy.Field(default=0)
     published_at = scrapy.Field()
     metadata = scrapy.Field(default={})
+    scraped_at = scrapy.Field()
 
     def __getitem__(self, key):
         try:
@@ -20,6 +22,11 @@ class PostItem(scrapy.Item):
             if key in defaults:
                 return defaults[key]
             raise
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "scraped_at" not in self:
+            self["scraped_at"] = datetime.now(timezone.utc).isoformat()
 
 
 class ProductItem(scrapy.Item):
@@ -33,6 +40,7 @@ class ProductItem(scrapy.Item):
     seller = scrapy.Field()
     availability = scrapy.Field()
     metadata = scrapy.Field(default={})
+    scraped_at = scrapy.Field()
 
     def __getitem__(self, key):
         try:
@@ -42,3 +50,8 @@ class ProductItem(scrapy.Item):
             if key in defaults:
                 return defaults[key]
             raise
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "scraped_at" not in self:
+            self["scraped_at"] = datetime.now(timezone.utc).isoformat()

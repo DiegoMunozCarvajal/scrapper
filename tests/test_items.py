@@ -45,3 +45,15 @@ def test_product_item_defaults():
 def test_post_item_missing_required_does_not_raise():
     item = PostItem()
     assert item.get("url") is None
+
+
+def test_post_item_has_scraped_at():
+    item = PostItem(site="reddit", url="http://x.com", title="X")
+    assert item.get("scraped_at") is not None
+    assert "T" in item["scraped_at"]  # ISO timestamp has T
+
+
+def test_product_item_has_scraped_at():
+    item = ProductItem(site="amazon", url="http://x.com", title="X")
+    assert item.get("scraped_at") is not None
+    assert "T" in item["scraped_at"]  # ISO timestamp has T

@@ -74,3 +74,20 @@ CREATE INDEX IF NOT EXISTS idx_products_site ON products(site);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
 CREATE INDEX IF NOT EXISTS idx_products_scraped_at ON products(scraped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status);
+
+-- ── Row Level Security (RLS) ─────────────────────
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_jobs ENABLE ROW LEVEL SECURITY;
+
+-- Public read access (anyone with project URL can read)
+CREATE POLICY "Public can read posts" ON posts FOR SELECT USING (true);
+CREATE POLICY "Public can read products" ON products FOR SELECT USING (true);
+CREATE POLICY "Public can read sites" ON sites FOR SELECT USING (true);
+
+-- Service role full access (for scraping pipeline)
+CREATE POLICY "Service can do anything with posts" ON posts FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service can do anything with products" ON products FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service can do anything with sites" ON sites FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL USING (true) WITH CHECK (true);
