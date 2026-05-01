@@ -2,11 +2,7 @@
 
 import random
 
-from scrapy import signals
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
-from scrapy.utils.response import response_status_message
-from twisted.internet import defer
-from twisted.internet.error import TimeoutError, DNSLookupError, ConnectionRefusedError
 
 
 class RetryWithBackoffMiddleware(RetryMiddleware):

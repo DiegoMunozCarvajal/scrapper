@@ -1,4 +1,3 @@
-import pytest
 from src.scrapper.items import PostItem, ProductItem
 
 

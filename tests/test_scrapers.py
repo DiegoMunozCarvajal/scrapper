@@ -1,6 +1,3 @@
-from dataclasses import asdict
-
-import pytest
 from src.scrapper.models import Post, Product, ScrapeResult
 
 
