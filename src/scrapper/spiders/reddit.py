@@ -75,7 +75,6 @@ class RedditSpider(scrapy.Spider):
 
             title = entry.get("title", "")
             url = entry.get("link", "")
-            author = entry.get("author", "")
             published = entry.get("updated", "") or entry.get("published", "")
 
             if not title or not url:
