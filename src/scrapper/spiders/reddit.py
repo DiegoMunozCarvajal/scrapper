@@ -47,10 +47,66 @@ class RedditSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "python")
         limit = int(getattr(self, "limit", 10))
+        rss_url = f"https://www.reddit.com/search.rss?q={query}&sort=relevance&limit={limit}"
+        yield scrapy.Request(
+            rss_url,
+            callback=self.parse_rss,
+            meta={"query": query, "limit": limit},
+            errback=self._fallback_to_search,
+        )
+
+    def _fallback_to_search(self, failure):
+        query = failure.request.meta["query"]
+        limit = failure.request.meta["limit"]
         url = f"https://old.reddit.com/search?q={query}&sort=relevance&type=link"
         yield scrapy.Request(url, meta={"query": query, "limit": limit, "count": 0})
 
+    def parse_rss(self, response):
+        query = response.meta["query"]
+        limit = response.meta["limit"]
+
+        import feedparser
+        feed = feedparser.parse(response.text)
+
+        count = 0
+        for entry in feed.entries:
+            if count >= limit:
+                return
+
+            title = entry.get("title", "")
+            url = entry.get("link", "")
+            author = entry.get("author", "")
+            published = entry.get("updated", "") or entry.get("published", "")
+
+            if not title or not url:
+                continue
+
+            count += 1
+
+            if published and self.cutoff_date:
+                try:
+                    post_time = date_parser.parse(published)
+                    cutoff = date_parser.parse(self.cutoff_date)
+                    if post_time < cutoff:
+                        self.logger.info(
+                            f"Skipping RSS post older than cutoff: {title}"
+                        )
+                        continue
+                except Exception:
+                    pass
+
+            yield response.follow(
+                url,
+                callback=self.parse_post_page,
+                meta={"query": query, "limit": limit, "count": count},
+            )
+
+        if count == 0:
+            self.logger.info("RSS returned no entries, falling back to HTML search")
+            yield from self._fallback_to_search(FakeFailure(response))
+
     def parse(self, response):
+        """Fallback: old.reddit.com search results (Strategy 2)."""
         query = response.meta["query"]
         limit = response.meta["limit"]
         count = response.meta["count"]
@@ -81,7 +137,7 @@ class RedditSpider(scrapy.Spider):
                 )
 
     def parse_post_page(self, response):
-        """Follow post URL to extract full content + top comment."""
+        """Extract full post content from detail page."""
         post_time_str = response.css("time::attr(datetime)").get()
         if post_time_str and self.cutoff_date:
             try:
@@ -116,13 +172,19 @@ class RedditSpider(scrapy.Spider):
         comment_text = response.css("a.comments::text").get("")
         try:
             comment_count = (
-                int(comment_text.replace(",", "").split()[0]) if comment_text and comment_text.split() else 0
+                int(comment_text.replace(",", "").split()[0])
+                if comment_text and comment_text.split()
+                else 0
             )
         except (ValueError, IndexError):
             comment_count = 0
 
         author = response.css("a.author::text").get("")
         title = response.css("a.title::text").get("")
+
+        if not post_url:
+            self.logger.warning("Skipping post with no URL")
+            return
 
         yield PostItem(
             site=self.site,
@@ -139,3 +201,10 @@ class RedditSpider(scrapy.Spider):
                 "query": response.meta.get("query"),
             },
         )
+
+
+class FakeFailure:
+    """Minimal failure-like object for fallback dispatch."""
+
+    def __init__(self, response):
+        self.request = response.request

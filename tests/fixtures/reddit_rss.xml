@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Python 3.13 released</title>
+    <link href="https://old.reddit.com/r/Python/comments/abc123/python_313_released/"/>
+    <author><name>u_python_dev</name></author>
+    <updated>2026-04-15T10:30:00Z</updated>
+  </entry>
+  <entry>
+    <title>Best practices for async Python</title>
+    <link href="https://old.reddit.com/r/Python/comments/def456/best_practices_async_python/"/>
+    <author><name>u_async_fan</name></author>
+    <updated>2026-04-14T08:00:00Z</updated>
+  </entry>
+</feed>
