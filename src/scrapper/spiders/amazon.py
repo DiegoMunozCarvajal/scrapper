@@ -7,6 +7,7 @@ class AmazonSpider(scrapy.Spider):
     name = "amazon"
     site = "amazon"
     site_type = "product"
+    DEPRECATED = True
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 1,
@@ -15,6 +16,13 @@ class AmazonSpider(scrapy.Spider):
         "RETRY_HTTP_CODES": [500, 502, 503, 504, 408, 429],
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.warning(
+            "Amazon spider is DEPRECATED — requires residential proxies. "
+            "Set PROXY_LIST with residential proxies to use this spider."
+        )
 
     def start_requests(self):
         query = getattr(self, "query", "laptop")

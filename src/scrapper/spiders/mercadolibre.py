@@ -7,11 +7,19 @@ class MercadoLibreSpider(scrapy.Spider):
     name = "mercadolibre"
     site = "mercadolibre"
     site_type = "product"
+    DEPRECATED = True
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 2,
         "DOWNLOAD_DELAY": 1,
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.warning(
+            "MercadoLibre spider is DEPRECATED — requires residential proxies. "
+            "Set PROXY_LIST with residential proxies to use this spider."
+        )
 
     def start_requests(self):
         query = getattr(self, "query", "laptop")

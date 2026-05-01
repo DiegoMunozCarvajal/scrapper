@@ -6,12 +6,19 @@ class QuoraSpider(scrapy.Spider):
     name = "quora"
     site = "quora"
     site_type = "post"
+    DEPRECATED = True
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 1,
         "DOWNLOAD_DELAY": 3,
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.warning(
+            "Quora spider is DEPRECATED — requires Cloudflare bypass (login + residential proxies)."
+        )
 
     def start_requests(self):
         query = getattr(self, "query", "python")
