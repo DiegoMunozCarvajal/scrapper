@@ -47,32 +47,32 @@ class AmazonSpider(scrapy.Spider):
                 )
 
 
-def parse_product(self, response):
-    """Follow product URL to extract description + seller info."""
-    description = "".join(
-        response.css("#productDescription *::text, #feature-bullets *::text").getall()
-    ).strip()[:2000]
+    def parse_product(self, response):
+        """Follow product URL to extract description + seller info."""
+        description = "".join(
+            response.css("#productDescription *::text, #feature-bullets *::text").getall()
+        ).strip()[:2000]
 
-    seller = response.css("#sellerName *::text, #bylineInfo *::text").get("").strip()
+        seller = response.css("#sellerName *::text, #bylineInfo *::text").get("").strip()
 
-    availability = response.css("#availability *::text").get("").strip()
+        availability = response.css("#availability *::text").get("").strip()
 
-    product_url = response.url
-    if not product_url.startswith("http"):
-        product_url = f"https://www.amazon.com{product_url}"
+        product_url = response.url
+        if not product_url.startswith("http"):
+            product_url = f"https://www.amazon.com{product_url}"
 
-    yield ProductItem(
-        site=self.site,
-        url=product_url,
-        title=response.css("#title::text, h1::text").get("").strip(),
-        price=None,
-        currency="USD",
-        rating=None,
-        review_count=0,
-        seller=seller,
-        availability=availability,
-        metadata={"type": "detail", "description": description[:1000]},
-    )
+        yield ProductItem(
+            site=self.site,
+            url=product_url,
+            title=response.css("#title::text, h1::text").get("").strip(),
+            price=None,
+            currency="USD",
+            rating=None,
+            review_count=0,
+            seller=seller,
+            availability=availability,
+            metadata={"type": "detail", "description": description[:1000]},
+        )
 
 
 def _parse_price(text: str) -> float | None:
