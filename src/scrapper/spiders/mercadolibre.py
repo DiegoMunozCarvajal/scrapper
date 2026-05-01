@@ -10,52 +10,36 @@ class MercadoLibreSpider(scrapy.Spider):
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 2,
-        "DOWNLOAD_DELAY": 2,
+        "DOWNLOAD_DELAY": 1,
     }
 
     def start_requests(self):
         query = getattr(self, "query", "laptop")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://listado.mercadolibre.com.co/{query.replace(' ', '-')}"
-        yield scrapy.Request(
-            url,
-            meta={"playwright": True, "query": query, "limit": limit, "count": 0},
-        )
+        url = f"https://api.mercadolibre.com/sites/MCO/search?q={query}&limit={limit}"
+        yield scrapy.Request(url, meta={"query": query, "limit": limit})
 
     def parse(self, response):
+        import json
+        data = json.loads(response.text)
         limit = response.meta["limit"]
-        query = response.meta["query"]
-        count = response.meta["count"]
 
-        items = response.css("li.ui-search-layout__item")
-        for item in items:
-            if count >= limit:
-                return
-
-            title = item.css("h2::text").get("")
-
-            price_text = item.css(".andes-money-amount__fraction::text").get("")
-            price = _parse_price(price_text)
-
-            url = item.css("a.ui-search-link::attr(href)").get("")
-
-            rating_text = item.css(".ui-search-reviews__rating-number::text").get("")
-            rating = float(rating_text) if rating_text else None
-
-            if title and url:
-                count += 1
-                yield ProductItem(
-                    site=self.site,
-                    url=url,
-                    title=title.strip(),
-                    price=price,
-                    currency="COP",
-                    rating=rating,
-                    review_count=0,
-                    seller="",
-                    availability="",
-                    metadata={"query": query},
-                )
+        for item in data.get("results", [])[:limit]:
+            yield ProductItem(
+                site=self.site,
+                url=item.get("permalink", ""),
+                title=item.get("title", ""),
+                price=item.get("price"),
+                currency=item.get("currency_id", "COP"),
+                rating=None,
+                review_count=item.get("reviews", {}).get("total", 0),
+                seller=item.get("seller", {}).get("nickname", ""),
+                availability="available" if item.get("available", True) else "unavailable",
+                metadata={
+                    "query": response.meta["query"],
+                    "condition": item.get("condition", ""),
+                },
+            )
 
 
 def _parse_price(text: str) -> float | None:

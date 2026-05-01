@@ -31,14 +31,18 @@ RETRY_ENABLED = True
 RETRY_TIMES = 4
 RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 
-TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+# Playwright download handler (required for JS rendering)
 DOWNLOAD_HANDLERS = {
     "http": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
     "https": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
 }
+
+# Playwright config
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
 PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 4
+PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000
+PLAYWRIGHT_ELEM_WAIT_TIMEOUT = 5000
 
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,

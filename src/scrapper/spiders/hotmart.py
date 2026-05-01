@@ -10,6 +10,7 @@ class HotmartSpider(scrapy.Spider):
     custom_settings = {
         "CONCURRENT_REQUESTS": 2,
         "DOWNLOAD_DELAY": 3,
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     }
 
     def start_requests(self):
@@ -18,39 +19,43 @@ class HotmartSpider(scrapy.Spider):
         url = f"https://hotmart.com/en/marketplace/search?q={query}"
         yield scrapy.Request(
             url,
-            meta={"playwright": True, "query": query, "limit": limit, "count": 0},
+            meta={"playwright": True, "query": query, "limit": limit},
         )
 
     def parse(self, response):
         limit = response.meta["limit"]
         query = response.meta["query"]
-        count = response.meta["count"]
 
-        cards = response.css('[class*="product"]')
+        cards = response.css("div.product-card-alt")
+        count = 0
+
         for card in cards:
             if count >= limit:
-                return
+                break
 
-            title_el = card.css("h2, h3, [class*='title']")
-            title = title_el.css("::text").get("")
+            title_el = card.css(".product-card-alt__title")
+            title = title_el.css("::text").get("").strip()
 
-            price_el = card.css("[class*='price'], [class*='Price']")
-            price_text = price_el.css("::text").get("")
-            price = _parse_price(price_text)
+            author_el = card.css(".product-card-alt__author")
+            author = author_el.css("::text").get("").strip()
 
-            url = card.css("a::attr(href)").get("")
+            rating_el = card.css(".product-card-alt__rating span::text")
+            rating = rating_el.get("").strip()
+
+            url_el = card.css("a.product-link::attr(href)")
+            url = url_el.get("")
 
             if title and url:
                 count += 1
                 yield ProductItem(
                     site=self.site,
                     url=url,
-                    title=title.strip(),
-                    price=price,
+                    title=title,
+                    price=None,
                     currency="USD",
-                    rating=None,
+                    rating=float(rating) if rating else None,
                     review_count=0,
-                    seller="",
+                    seller=author,
                     availability="",
                     metadata={"query": query},
                 )

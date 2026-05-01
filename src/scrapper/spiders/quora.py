@@ -10,6 +10,7 @@ class QuoraSpider(scrapy.Spider):
     custom_settings = {
         "CONCURRENT_REQUESTS": 1,
         "DOWNLOAD_DELAY": 3,
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     }
 
     def start_requests(self):
@@ -18,13 +19,13 @@ class QuoraSpider(scrapy.Spider):
         url = f"https://www.quora.com/search?q={query}&type=question"
         yield scrapy.Request(
             url,
-            meta={"playwright": True, "query": query, "limit": limit, "count": 0},
+            meta={"playwright": True, "playwright_include_page": True, "query": query, "limit": limit},
         )
 
     def parse(self, response):
-        limit = response.meta["limit"]
-        query = response.meta["query"]
-        count = response.meta["count"]
+        limit = response.meta.get("limit", 10)
+        query = response.meta.get("query", "")
+        count = 0
 
         cards = response.css('[class*="qu-bg--white"]')
         for card in cards:
