@@ -31,35 +31,14 @@ class RedditSpider(scrapy.Spider):
 
             title_el = card.css("a.search-title")
             title = title_el.css("::text").get("")
-            url = title_el.css("::attr(href)").get("")
+            href = title_el.css("::attr(href)").get("")
 
-            author = card.css("a.author::text").get("")
-
-            score_text = card.css("span.search-score::text").get("0")
-            try:
-                score = int(score_text.split()[0])
-            except (ValueError, TypeError, IndexError):
-                score = 0
-
-            comment_text = card.css("a.search-comments::text").get("0 comments")
-            try:
-                comment_count = int(comment_text.split()[0])
-            except (ValueError, TypeError, IndexError):
-                comment_count = 0
-
-            content = "".join(card.css("div.md *::text").getall()).strip()
-
-            if title and url:
+            if title and href:
                 count += 1
-                yield PostItem(
-                    site=self.site,
-                    url=url,
-                    title=title.strip(),
-                    author=author.strip() if author else "",
-                    content=content.strip() if content else "",
-                    score=score,
-                    comment_count=comment_count,
-                    metadata={"query": query},
+                yield response.follow(
+                    href,
+                    callback=self.parse_post,
+                    meta={"query": query, "limit": limit, "count": count},
                 )
 
         if count < limit:
@@ -69,3 +48,28 @@ class RedditSpider(scrapy.Spider):
                     next_link,
                     meta={"query": query, "limit": limit, "count": count},
                 )
+
+    def parse_post(self, response):
+        """Follow post URL to extract full content + top comment."""
+        content = "".join(response.css("div.md *::text").getall()).strip()
+
+        top_comment = ""
+        comments = response.css("div.commentarea div.md")
+        if comments:
+            first_comment = comments[0]
+            top_comment = "".join(first_comment.css("*::text").getall()).strip()
+
+        post_url = response.url
+        if not post_url.startswith("http"):
+            post_url = f"https://old.reddit.com{post_url}"
+
+        yield PostItem(
+            site=self.site,
+            url=post_url,
+            title=response.css("a.title::text").get("").strip(),
+            author=response.css("a.author::text").get("").strip(),
+            content=content,
+            score=0,
+            comment_count=0,
+            metadata={"type": "detail", "top_comment": top_comment[:500]},
+        )
