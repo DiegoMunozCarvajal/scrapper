@@ -1,0 +1,43 @@
+{
+  "data": {
+    "search": {
+      "products": [
+        {
+          "id": "prod_001",
+          "name": "Digital Marketing Masterclass",
+          "url": "https://hotmart.com/en/marketplace/products/digital-marketing-masterclass/prod_001",
+          "author": {
+            "name": "John Smith"
+          },
+          "price": {
+            "value": 49.99,
+            "currency": "USD"
+          },
+          "rating": 4.7,
+          "reviewCount": 234,
+          "publishedAt": "2025-11-15T00:00:00Z"
+        },
+        {
+          "id": "prod_002",
+          "name": "Python for Data Science",
+          "url": "https://hotmart.com/en/marketplace/products/python-data-science/prod_002",
+          "author": {
+            "name": "Jane Doe"
+          },
+          "price": {
+            "value": 79.0,
+            "currency": "USD"
+          },
+          "rating": 4.3,
+          "reviewCount": 89,
+          "publishedAt": "2026-01-20T00:00:00Z"
+        }
+      ],
+      "pagination": {
+        "page": 1,
+        "totalPages": 5,
+        "totalItems": 50
+      }
+    }
+  }
+}
