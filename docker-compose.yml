@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  scrapyd:
+    image: vimagick/scrapyd:latest
+    ports:
+      - "6800:6800"
+    volumes:
+      - ./src:/scrapy/src
+      - ./scrapy.cfg:/scrapy/scrapy.cfg
+      - scrapyd_data:/scrapy/data
+    restart: unless-stopped
+
+  scrapydweb:
+    image: my8100/scrapydweb:latest
+    ports:
+      - "5000:5000"
+    environment:
+      SCRAPYDWEB_USERNAME: admin
+      SCRAPYDWEB_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      SCRAPYD_SERVERS_0_URL: http://scrapyd:6800
+    depends_on:
+      - scrapyd
+    restart: unless-stopped
+
+volumes:
+  scrapyd_data:
