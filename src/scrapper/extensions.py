@@ -36,33 +36,26 @@ class StatsLogger:
             return
         _log_handlers_configured = True
 
-        import logging
-        from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
-
-        root = logging.getLogger()
-        Path("logs").mkdir(parents=True, exist_ok=True)
-
+        from pathlib import Path
         from . import settings
 
-        size_handler = RotatingFileHandler(
-            settings.LOG_FILE_SIZE,
-            maxBytes=settings.LOG_FILE_MAX_BYTES,
-            backupCount=settings.LOG_FILE_BACKUP_COUNT,
-        )
-        size_handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-        ))
-        root.addHandler(size_handler)
+        Path("logs").mkdir(parents=True, exist_ok=True)
 
-        time_handler = TimedRotatingFileHandler(
-            settings.LOG_FILE_TIME,
-            when=settings.LOG_FILE_TIME_WHEN,
-            backupCount=settings.LOG_FILE_TIME_BACKUP,
+        logger.add(
+            settings.LOG_FILE_PATH,
+            rotation=settings.LOG_FILE_MAX_BYTES,
+            retention=settings.LOG_FILE_BACKUP_COUNT,
+            level=settings.LOG_LEVEL,
+            format="{time:YYYY-MM-DD HH:mm:ss} [{name}] {level}: {message}",
         )
-        time_handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-        ))
-        root.addHandler(time_handler)
+
+        logger.add(
+            settings.LOG_FILE_TIME,
+            rotation=settings.LOG_FILE_TIME_WHEN,
+            retention=settings.LOG_FILE_TIME_BACKUP,
+            level=settings.LOG_LEVEL,
+            format="{time:YYYY-MM-DD HH:mm:ss} [{name}] {level}: {message}",
+        )
 
     def spider_opened(self, spider):
         self.start_time = time.time()

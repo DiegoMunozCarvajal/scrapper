@@ -1,10 +1,8 @@
-import logging
 import os
 
+from loguru import logger
 from scrapy.http import HtmlResponse
 from scrapper.stealth_handler import ScrapyPlaywrightStealthDownloadHandler
-
-logger = logging.getLogger(__name__)
 
 
 class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):

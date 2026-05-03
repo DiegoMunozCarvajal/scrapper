@@ -1,7 +1,5 @@
 import json
-import logging
 import tempfile
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -156,44 +154,32 @@ class TestStatsLoggerMetrics:
 class TestLogRotation:
     def test_log_rotation_settings_exist(self):
         from scrapper import settings
-        assert settings.LOG_FILE_SIZE == "logs/scrapy.log"
+        assert settings.LOG_FILE_PATH == "logs/scrapy.log"
         assert settings.LOG_FILE_MAX_BYTES == 5 * 1024 * 1024
         assert settings.LOG_FILE_BACKUP_COUNT == 5
         assert settings.LOG_FILE_TIME == "logs/scrapy-daily.log"
-        assert settings.LOG_FILE_TIME_WHEN == "midnight"
+        assert settings.LOG_FILE_TIME_WHEN == "00:00"
         assert settings.LOG_FILE_TIME_BACKUP == 7
 
     def test_setup_log_rotation_adds_handlers(self, monkeypatch):
         import scrapper.extensions as ext_mod
+        from loguru import logger
 
         # Reset global guard before test
         ext_mod._log_handlers_configured = False
 
-        root = logging.getLogger()
-
-        # Remove any existing rotation handlers from previous tests
-        handlers_to_remove = []
-        for h in root.handlers[:]:
-            if isinstance(h, (RotatingFileHandler, TimedRotatingFileHandler)):
-                handlers_to_remove.append(h)
-                root.removeHandler(h)
-
-        initial_handlers = len(root.handlers)
+        initial_handlers = len(logger._core.handlers)
 
         from scrapper.extensions import StatsLogger
         ext = StatsLogger(metrics_dir="/tmp/fake")
         Path("/tmp/fake/logs").mkdir(parents=True, exist_ok=True)
         ext._setup_log_rotation()
 
-        assert len(root.handlers) >= initial_handlers + 2
+        assert len(logger._core.handlers) >= initial_handlers + 2
 
         # Cleanup: remove handlers added by test
-        for h in root.handlers[initial_handlers:]:
-            root.removeHandler(h)
-
-        # Restore previously existing rotation handlers
-        for h in handlers_to_remove:
-            root.addHandler(h)
+        while len(logger._core.handlers) > initial_handlers:
+            logger.remove()
 
         # Reset global guard
         ext_mod._log_handlers_configured = False
@@ -201,20 +187,20 @@ class TestLogRotation:
     def test_setup_log_rotation_called_once(self, monkeypatch):
         from scrapper.extensions import StatsLogger
         import scrapper.extensions as ext_mod
+        from loguru import logger
 
-        root = logging.getLogger()
-        initial_count = len(root.handlers)
+        initial_count = len(logger._core.handlers)
 
         ext = StatsLogger(metrics_dir="/tmp/fake")
         Path("/tmp/fake/logs").mkdir(parents=True, exist_ok=True)
         ext._setup_log_rotation()
-        first_count = len(root.handlers)
+        first_count = len(logger._core.handlers)
         ext._setup_log_rotation()
 
-        assert len(root.handlers) == first_count
+        assert len(logger._core.handlers) == first_count
 
-        for h in root.handlers[initial_count:]:
-            root.removeHandler(h)
+        while len(logger._core.handlers) > initial_count:
+            logger.remove()
         ext_mod._log_handlers_configured = False
 
 

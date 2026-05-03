@@ -1,13 +1,11 @@
 import hashlib
 import json
-import logging
 import os
 
+from loguru import logger
 from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 
 from .llm_cache import LLMCache
-
-logger = logging.getLogger(__name__)
 
 
 class LLMExtractor:

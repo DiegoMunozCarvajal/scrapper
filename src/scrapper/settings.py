@@ -112,13 +112,13 @@ LOG_ENABLED = True
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Size-based rotation: 5 files x 5MB
-LOG_FILE_SIZE = "logs/scrapy.log"
+LOG_FILE_PATH = "logs/scrapy.log"
 LOG_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5MB
 LOG_FILE_BACKUP_COUNT = 5
 
 # Time-based rotation: daily, keep 7 days
 LOG_FILE_TIME = "logs/scrapy-daily.log"
-LOG_FILE_TIME_WHEN = "midnight"
+LOG_FILE_TIME_WHEN = "00:00"
 LOG_FILE_TIME_BACKUP = 7
 
 # ── Cookie persistence (for login sites) ──────
