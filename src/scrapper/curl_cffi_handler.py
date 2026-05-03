@@ -2,12 +2,12 @@ import logging
 import os
 
 from scrapy.http import HtmlResponse
-from scrapy_playwright.handler import ScrapyPlaywrightDownloadHandler
+from scrapper.stealth_handler import ScrapyPlaywrightStealthDownloadHandler
 
 logger = logging.getLogger(__name__)
 
 
-class CurlCffiDownloadHandler(ScrapyPlaywrightDownloadHandler):
+class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
     IMPERSONATE_FALLBACK = "chrome124"
 
     def _download_request(self, request, spider):
@@ -25,8 +25,7 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightDownloadHandler):
             return super()._download_request(request, spider)
 
         impersonate = os.getenv("CURL_CFFI_IMPERSONATE", self.IMPERSONATE_FALLBACK)
-        from twisted.internet import reactor, threads
-        from twisted.internet.defer import Deferred
+        from twisted.internet.threads import blockingCallFromThread, deferToThread
 
         def _do_request():
             try:
@@ -47,10 +46,10 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightDownloadHandler):
                 spider.logger.warning(
                     f"curl_cffi request failed: {e}, falling back to parent handler"
                 )
-                deferred = Deferred()
-                reactor.callFromThread(lambda: deferred.callback(
-                    super(CurlCffiDownloadHandler, self)._download_request(request, spider)
-                ))
-                return deferred
+                return blockingCallFromThread(
+                    super(CurlCffiDownloadHandler, self)._download_request,
+                    request,
+                    spider,
+                )
 
-        return threads.deferToThread(_do_request)
+        return deferToThread(_do_request)
