@@ -15,3 +15,7 @@ test-results/
 *.json
 *.jsonlines
 *.csv
+llm_cache.db
+cookies/
+metrics/
+rag_output/
