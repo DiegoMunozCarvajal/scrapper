@@ -100,7 +100,7 @@ class EmailAlerter:
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls(
+        ext = cls(
             smtp_host=crawler.settings.get("ALERT_SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(crawler.settings.get("ALERT_SMTP_PORT", 587)),
             from_addr=crawler.settings.get("ALERT_EMAIL_FROM", ""),
@@ -109,6 +109,9 @@ class EmailAlerter:
             metrics_dir=crawler.settings.get("METRICS_DIR", "metrics"),
             error_threshold=int(crawler.settings.get("ALERT_ERROR_THRESHOLD", 5)),
         )
+        crawler.signals.connect(ext.spider_error, signal=signals.spider_error)
+        crawler.signals.connect(ext.spider_closed, signal=signals.spider_closed)
+        return ext
 
     def spider_error(self, failure, response, spider):
         self.error_count += 1
@@ -132,6 +135,9 @@ class EmailAlerter:
 
     def _detect_anomaly(self, spider) -> str | None:
         """Compare current run vs last 10 runs for this spider."""
+        import json
+        from pathlib import Path
+
         metrics_path = Path(self.metrics_dir) / "metrics.json"
         if not metrics_path.exists():
             return None
@@ -191,6 +197,10 @@ class EmailAlerter:
 
 ```python
 # src/scrapper/settings.py
+# ── Scheduling ────────────────────────────
+SCHEDULE_ENABLED = os.getenv("SCHEDULE_ENABLED", "false").lower() in ("true", "1", "yes")
+
+# ── Alerts ────────────────────────────────
 ALERT_SMTP_HOST = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")
 ALERT_SMTP_PORT = int(os.getenv("ALERT_SMTP_PORT", "587"))
 ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM", "")
@@ -468,7 +478,20 @@ def _setup_log_rotation(self):
 | `reddit.py` | 62% | 85% | Test parse_post_page, cutoff_date filtering |
 | `hotmart.py` | 50% | 85% | Test pagination, API response parsing edge cases |
 | `spiders/__init__.py` | 0% | 100% | Trivial: test import |
-| Deprecated spiders | 0% | 0% | Skip (explicitly exclude from coverage) |
+| Deprecated spiders | 0% | 0% | Skip (exclude via `[tool.coverage.run] omit` in pyproject.toml) |
+
+### Coverage exclusions
+
+In `pyproject.toml`:
+
+```toml
+[tool.coverage.run]
+omit = [
+    "src/scrapper/spiders/amazon.py",
+    "src/scrapper/spiders/mercadolibre.py",
+    "src/scrapper/spiders/quora.py",
+]
+```
 
 ### Key test cases
 
