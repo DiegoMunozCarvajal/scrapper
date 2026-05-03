@@ -170,7 +170,8 @@ Composite handler extending `ScrapyPlaywrightStealthDownloadHandler`:
 - **Playwright requests** (`meta["playwright"]=True`): delegates to parent class (unchanged)
 - **Regular requests**: uses `curl_cffi.requests.Session` with Chrome 124 impersonation via `twisted.internet.threads.deferToThread`
 - Fingerprint configurable via `CURL_CFFI_IMPERSONATE` env var (default `chrome124`)
-- Graceful fallback: if curl-cffi import fails, logs warning and delegates to default Scrapy HTTP handler
+- `CURL_CFFI_ENABLED=false` disables the handler at registration time in `settings.py` (falls back to default Scrapy HTTP handler)
+- Graceful fallback: if curl-cffi import fails at runtime, logs warning and delegates to default Scrapy HTTP handler
 
 Registered in `settings.py`:
 ```python
@@ -208,11 +209,14 @@ DOWNLOAD_HANDLERS = {
 Activation point: `parse_dom()` — when CSS selectors iterate all cards and `count == 0`:
 
 ```python
+# hotmart.py
+from ..llm_extractor import llm_fallback
+
 def parse_dom(self, response):
     # ... existing CSS selector extraction ...
     if count == 0:
         self.logger.warning("DOM selectors found nothing, trying LLM fallback")
-        yield from self._fallback_to_llm(response)
+        yield from llm_fallback(self, response, ProductItem)
         return
 ```
 
@@ -228,11 +232,14 @@ class HotmartSpider(scrapy.Spider):
 Activation point: `parse()` — when `div.search-result-link` selectors yield `count == 0`:
 
 ```python
+# reddit.py
+from ..llm_extractor import llm_fallback
+
 def parse(self, response):
     # ... existing CSS selector extraction ...
     if count == 0:
         self.logger.warning("HTML selectors found nothing, trying LLM fallback")
-        yield from self._fallback_to_llm(response)
+        yield from llm_fallback(self, response, PostItem)
         return
 ```
 
