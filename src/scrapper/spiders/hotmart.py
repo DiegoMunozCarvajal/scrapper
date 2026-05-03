@@ -5,6 +5,7 @@ from urllib.parse import quote_plus
 
 import scrapy
 from scrapy import Request
+from scrapy_playwright.page import PageMethod
 
 from ..items import ProductItem
 from ..prompts.hotmart import HOTMART_PROMPT
@@ -46,45 +47,26 @@ class HotmartSpider(scrapy.Spider):
         else:
             yield Request(
                 url,
-                callback=self.discover_api,
+                callback=self.discover_api_callback,
                 meta={
                     "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod(_intercept_api_calls, query),
+                    ],
                     "query": query,
                     "limit": limit,
                 },
             )
 
-    def discover_api(self, response):
-        """Warm-up: use Playwright to find internal API endpoint."""
+    def discover_api_callback(self, response):
+        """Read intercepted API calls from PageMethod result."""
         query = response.meta["query"]
         limit = response.meta["limit"]
 
-        intercepted: list[dict[str, Any]] = []
-
-        page = response.meta.get("playwright_page")
-        if page:
-            try:
-                import asyncio
-
-                async def capture_route(route):
-                    url = route.request.url
-                    if any(kw in url.lower() for kw in ["search", "product", "graphql", "/api/"]):
-                        intercepted.append({
-                            "url": url,
-                            "method": route.request.method,
-                            "headers": dict(route.request.headers),
-                            "post_data": route.request.post_data,
-                        })
-                    await route.continue_()
-
-                async def _intercept():
-                    await page.route("**/*", capture_route)
-                    await asyncio.sleep(5)
-
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(_intercept())
-            except Exception as e:
-                self.logger.warning(f"API interception failed: {e}")
+        intercepted = []
+        methods = response.meta.get("playwright_page_methods", [])
+        if methods and methods[0].result is not None:
+            intercepted = methods[0].result
 
         if intercepted:
             self.logger.info(f"Intercepted {len(intercepted)} API calls")
@@ -299,37 +281,23 @@ class HotmartSpider(scrapy.Spider):
         if count >= limit:
             return
 
-        page_obj = response.meta.get("playwright_page")
-        if page_obj:
-            try:
-                import asyncio
-
-                async def _click_load_more():
-                    button = page_obj.locator("button.load-more-btn")
-                    if await button.count() > 0:
-                        await button.click()
-                        await page_obj.wait_for_timeout(2000)
-                        return True
-                    return False
-
-                loop = asyncio.get_event_loop()
-                clicked = loop.run_until_complete(_click_load_more())
-                if clicked:
-                    next_page = page + 1
-                    yield Request(
-                        response.url,
-                        callback=self.parse_dom,
-                        meta={
-                            "playwright": True,
-                            "query": query,
-                            "limit": limit,
-                            "page": next_page,
-                            "strategy": "playwright",
-                        },
-                        dont_filter=True,
-                    )
-            except Exception as e:
-                self.logger.warning(f"Load more failed: {e}")
+        next_page = page + 1
+        yield Request(
+            response.url,
+            callback=self.parse_dom,
+            meta={
+                "playwright": True,
+                "playwright_page_methods": [
+                    PageMethod("wait_for_timeout", 1000),
+                    PageMethod(_click_load_more),
+                ],
+                "query": query,
+                "limit": limit,
+                "page": next_page,
+                "strategy": "playwright",
+            },
+            dont_filter=True,
+        )
 
 
 def _parse_price(text):
@@ -359,6 +327,36 @@ def _parse_review_count(text):
         return int(numbers[0]) if numbers else 0
     except (ValueError, IndexError):
         return 0
+
+
+async def _intercept_api_calls(page, query):
+    """PageMethod callable: intercept API requests and return them."""
+    intercepted: list[dict[str, Any]] = []
+
+    async def capture_route(route):
+        url = route.request.url
+        if any(kw in url.lower() for kw in ["search", "product", "graphql", "/api/"]):
+            intercepted.append({
+                "url": url,
+                "method": route.request.method,
+                "headers": dict(route.request.headers),
+                "post_data": route.request.post_data,
+            })
+        await route.continue_()
+
+    await page.route("**/*", capture_route)
+    await page.wait_for_timeout(5000)
+    return intercepted
+
+
+async def _click_load_more(page):
+    """PageMethod callable: click the load-more button if present."""
+    button = page.locator("button.load-more-btn")
+    if await button.count() > 0:
+        await button.click()
+        await page.wait_for_timeout(2000)
+        return True
+    return False
 
 
 class FakeFailure:
