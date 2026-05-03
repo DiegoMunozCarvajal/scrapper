@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from scrapy.http import HtmlResponse, Request
 
-from scrapper.items import ProductItem, PostItem
+from scrapper.items import ProductItem
 from scrapper.spiders.hotmart import HotmartSpider
 from scrapper.spiders.reddit import RedditSpider
 
