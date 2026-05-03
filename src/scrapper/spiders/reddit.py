@@ -33,6 +33,7 @@ class RedditSpider(scrapy.Spider):
         query = getattr(self, "query", "python")
 
         if supabase_url and supabase_key:
+            client = None
             try:
                 client = create_client(supabase_url, supabase_key)
                 result = (
@@ -49,6 +50,12 @@ class RedditSpider(scrapy.Spider):
                     self.logger.info(f"Incremental mode: cutoff date = {self.cutoff_date}")
             except Exception as e:
                 self.logger.warning(f"Could not load cutoff date: {e}")
+            finally:
+                if client:
+                    try:
+                        client.postgrest.session.aclose()
+                    except Exception:
+                        pass
 
     def start_requests(self):
         query = getattr(self, "query", "python")
@@ -197,10 +204,14 @@ class RedditSpider(scrapy.Spider):
             self.logger.warning("Skipping post with no URL")
             return
 
+        if not title:
+            self.logger.warning(f"Skipping post with no title: {post_url}")
+            return
+
         yield PostItem(
             site=self.site,
             url=post_url,
-            title=title.strip() if title else "",
+            title=title.strip(),
             author=author.strip() if author else "",
             content=content,
             score=score,

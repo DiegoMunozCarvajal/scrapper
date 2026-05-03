@@ -134,3 +134,9 @@ class SupabasePipeline:
         except Exception as e:
             spider.logger.error(f"Supabase upsert failed for {item.get('url')}: {e}")
         return item
+
+    def close_spider(self, spider):
+        try:
+            self.client.postgrest.session.aclose()
+        except Exception:
+            pass
