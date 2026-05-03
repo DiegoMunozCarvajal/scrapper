@@ -129,7 +129,18 @@ class StatsLogger:
             try:
                 f.seek(0)
                 content = f.read()
-                data = json.loads(content) if content.strip() else {"runs": []}
+                if content.strip():
+                    try:
+                        data = json.loads(content)
+                        if not isinstance(data, dict) or "runs" not in data:
+                            data = {"runs": []}
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(
+                            "Corrupted metrics.json detected, resetting to empty"
+                        )
+                        data = {"runs": []}
+                else:
+                    data = {"runs": []}
                 data["runs"].append(run)
 
                 # Prune oldest entries per spider if over max
@@ -154,7 +165,7 @@ class EmailAlerter:
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
         self.from_addr = from_addr
-        self.password = password
+        self._password = password
         self.to_addr = to_addr
         self.metrics_dir = metrics_dir
         self.error_threshold = error_threshold
@@ -166,7 +177,7 @@ class EmailAlerter:
             smtp_host=crawler.settings.get("ALERT_SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(crawler.settings.get("ALERT_SMTP_PORT", 587)),
             from_addr=crawler.settings.get("ALERT_EMAIL_FROM", ""),
-            password=crawler.settings.get("ALERT_EMAIL_PASSWORD", ""),
+            password=crawler.settings.get("_ALERT_EMAIL_PASSWORD", ""),
             to_addr=crawler.settings.get("ALERT_EMAIL_TO", ""),
             metrics_dir=crawler.settings.get("METRICS_DIR", "metrics"),
             error_threshold=int(crawler.settings.get("ALERT_ERROR_THRESHOLD", 5)),
@@ -190,7 +201,7 @@ class EmailAlerter:
         if anomaly:
             alerts.append(("WARNING", anomaly))
 
-        if alerts and self.from_addr and self.password:
+        if alerts and self.from_addr and self._password:
             self._send_email(spider.name, alerts)
 
     def _detect_anomaly(self, spider) -> str | None:
@@ -248,7 +259,7 @@ class EmailAlerter:
         try:
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()
-                server.login(self.from_addr, self.password)
+                server.login(self.from_addr, self._password)
                 server.send_message(msg)
             logger.info(f"Alert email sent to {self.to_addr}")
         except Exception as e:

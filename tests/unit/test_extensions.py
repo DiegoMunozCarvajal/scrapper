@@ -240,7 +240,7 @@ class TestEmailAlerter:
             "ALERT_SMTP_HOST": "mx.example.com",
             "ALERT_SMTP_PORT": 2525,
             "ALERT_EMAIL_FROM": "from@x.com",
-            "ALERT_EMAIL_PASSWORD": "secret",
+            "_ALERT_EMAIL_PASSWORD": "secret",
             "ALERT_EMAIL_TO": "to@x.com",
             "METRICS_DIR": "mymetrics",
             "ALERT_ERROR_THRESHOLD": 10,
