@@ -25,20 +25,15 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightDownloadHandler):
             return super()._download_request(request, spider)
 
         impersonate = os.getenv("CURL_CFFI_IMPERSONATE", self.IMPERSONATE_FALLBACK)
-        from twisted.internet import reactor, threads  # noqa: F401
-
-        proxy = request.meta.get("proxy") or (
-            request.meta.get("playwright_context_kwargs", {}).get("proxy", {}).get("server")
-        )
+        from twisted.internet import reactor, threads
+        from twisted.internet.defer import Deferred
 
         def _do_request():
             try:
-                proxies = {"http": proxy, "https": proxy} if proxy else None
                 resp = curl_requests.get(
                     request.url,
                     headers=dict(request.headers),
                     impersonate=impersonate,
-                    proxies=proxies,
                     timeout=30,
                 )
                 return HtmlResponse(
@@ -52,7 +47,10 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightDownloadHandler):
                 spider.logger.warning(
                     f"curl_cffi request failed: {e}, falling back to parent handler"
                 )
-                result = super(CurlCffiDownloadHandler, self)._download_request(request, spider)
-                return result
+                deferred = Deferred()
+                reactor.callFromThread(lambda: deferred.callback(
+                    super(CurlCffiDownloadHandler, self)._download_request(request, spider)
+                ))
+                return deferred
 
         return threads.deferToThread(_do_request)
