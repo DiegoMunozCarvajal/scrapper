@@ -32,6 +32,9 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:supabase._sync.*",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

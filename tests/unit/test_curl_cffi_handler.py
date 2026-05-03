@@ -27,7 +27,8 @@ def test_playwright_request_delegates_to_parent():
     spider.logger = MagicMock()
 
     with patch(
-        "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler._download_request"
+        "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler._download_request",
+        new_callable=MagicMock,
     ) as mock_parent:
         mock_parent.return_value = Deferred()
 
