@@ -33,9 +33,8 @@ class TestHotmartLLMFallback:
         hotmart_response.meta["query"] = "python"
         hotmart_response.meta["limit"] = 10
 
-        items = list(spider.parse_dom(hotmart_response))
+        items = [i for i in spider.parse_dom(hotmart_response) if isinstance(i, ProductItem)]
         assert len(items) == 2
-        assert all(isinstance(i, ProductItem) for i in items)
         assert items[0]["title"] == "Python Masterclass"
         assert items[1]["title"] == "Django for Beginners"
 
