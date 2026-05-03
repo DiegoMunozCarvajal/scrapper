@@ -33,8 +33,8 @@ RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 
 # Playwright download handler (required for JS rendering)
 DOWNLOAD_HANDLERS = {
-    "http": "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler",
-    "https": "scrapper.stealth_handler.ScrapyPlaywrightStealthDownloadHandler",
+    "http": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
+    "https": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
 }
 
 # Playwright config
@@ -50,11 +50,19 @@ PLAYWRIGHT_HUMAN_SIMULATION = os.getenv(
     "PLAYWRIGHT_HUMAN_SIMULATION", "true"
 ).lower() in ("true", "1", "yes")
 
+# ── RAG-ready export ─────────────────────
+RAG_EXPORT_ENABLED = os.getenv("RAG_EXPORT_ENABLED", "true").lower() in ("true", "1", "yes")
+RAG_OUTPUT_DIR = "rag_output"
+
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
     "scrapper.pipelines.DedupInMemoryPipeline": 200,
     "scrapper.pipelines.SupabasePipeline": 300,
 }
+
+if RAG_EXPORT_ENABLED:
+    ITEM_PIPELINES["scrapper.rag_export.MarkdownExportPipeline"] = 400
+    ITEM_PIPELINES["scrapper.rag_export.ChunkedJSONPipeline"] = 450
 
 DOWNLOADER_MIDDLEWARES = {
     "scrapper.middlewares.RetryWithBackoffMiddleware": 550,
@@ -65,6 +73,7 @@ DOWNLOADER_MIDDLEWARES = {
 EXTENSIONS = {
     "scrapper.extensions.StatsLogger": 400,
     "scrapper.extensions.ErrorAlerter": 500,
+    "scrapper.dashboard.MetricsDashboard": 600,
 }
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -73,6 +82,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 PROXY_LIST = os.getenv("PROXY_LIST", "")
 
 ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
+
+# ── Metrics persistence ──────────────────
+METRICS_DIR = "metrics"
+METRICS_MAX_RUNS = 100
 
 LOG_LEVEL = "INFO"
 LOG_FILE = "scrapy.log"
