@@ -33,8 +33,8 @@ RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429]
 
 # Playwright download handler (required for JS rendering)
 DOWNLOAD_HANDLERS = {
-    "http": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
-    "https": "scrapy_playwright_stealth.handler.ScrapyPlaywrightStealthDownloadHandler",
+    "http": "scrapper.curl_cffi_handler.CurlCffiDownloadHandler",
+    "https": "scrapper.curl_cffi_handler.CurlCffiDownloadHandler",
 }
 
 # Playwright config
@@ -53,6 +53,13 @@ PLAYWRIGHT_HUMAN_SIMULATION = os.getenv(
 # ── RAG-ready export ─────────────────────
 RAG_EXPORT_ENABLED = os.getenv("RAG_EXPORT_ENABLED", "true").lower() in ("true", "1", "yes")
 RAG_OUTPUT_DIR = "rag_output"
+
+# ── LLM fallback extraction ─────────────────
+LLM_ENABLED = os.getenv("LLM_ENABLED", "true").lower() in ("true", "1", "yes")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "86400"))
+LLM_CACHE_PATH = os.getenv("LLM_CACHE_PATH", "llm_cache.db")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
@@ -81,6 +88,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 PROXY_LIST = os.getenv("PROXY_LIST", "")
+
+# ── curl-cffi anti-bot ──────────────────────
+CURL_CFFI_ENABLED = os.getenv("CURL_CFFI_ENABLED", "true").lower() in ("true", "1", "yes")
+CURL_CFFI_IMPERSONATE = os.getenv("CURL_CFFI_IMPERSONATE", "chrome124")
 
 # ── Email alerts ──────────────────────────
 ALERT_SMTP_HOST = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")
@@ -111,6 +122,7 @@ LOG_FILE_TIME_WHEN = "midnight"
 LOG_FILE_TIME_BACKUP = 7
 
 # ── Cookie persistence (for login sites) ──────
+COOKIE_PERSIST_ENABLED = os.getenv("COOKIE_PERSIST_ENABLED", "true").lower() in ("true", "1", "yes")
 COOKIE_SAVE_ENABLED = True
 COOKIE_LOAD_ENABLED = True
 COOKIE_DB_PATH = "cookies/".strip("/")
