@@ -10,6 +10,7 @@ from scrapy_playwright.page import PageMethod
 from ..items import ProductItem
 from ..prompts.hotmart import HOTMART_PROMPT
 from ..llm_extractor import llm_fallback
+from ..utils import FakeFailure
 
 
 class HotmartSpider(scrapy.Spider):
@@ -359,8 +360,3 @@ async def _click_load_more(page):
     return False
 
 
-class FakeFailure:
-    """Minimal failure-like object for errback dispatch."""
-
-    def __init__(self, response):
-        self.request = response.request

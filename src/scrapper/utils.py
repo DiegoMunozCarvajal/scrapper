@@ -32,3 +32,10 @@ def ensure_dir(path: str | Path) -> Path:
 
 def slugify(text: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in text).strip("_")
+
+
+class FakeFailure:
+    """Minimal failure-like object for errback/fallback dispatch."""
+
+    def __init__(self, response):
+        self.request = response.request

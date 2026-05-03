@@ -53,7 +53,10 @@ class MarkdownExportPipeline:
         body = f"# {title}\n\n{content}" if content else f"# {title}"
         md = f"---\n{frontmatter}---\n\n{body}\n"
 
-        filepath.write_text(md)
+        try:
+            filepath.write_text(md)
+        except OSError as e:
+            logger.error(f"Failed to write markdown file {filepath}: {e}")
         return item
 
     def _build_frontmatter(self, item, source_type: str) -> str:
@@ -92,10 +95,13 @@ class ChunkedJSONPipeline:
 
     def process_item(self, item, spider):
         chunk = self._build_chunk(item)
-        if self._file is None:
-            self._file = open(self.output_dir / "chunks.jsonl", "a")
-        self._file.write(json.dumps(chunk, ensure_ascii=False) + "\n")
-        self._file.flush()
+        try:
+            if self._file is None:
+                self._file = open(self.output_dir / "chunks.jsonl", "a")
+            self._file.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+            self._file.flush()
+        except OSError as e:
+            logger.error(f"Failed to write JSONL chunk: {e}")
         return item
 
     def _build_chunk(self, item) -> dict:

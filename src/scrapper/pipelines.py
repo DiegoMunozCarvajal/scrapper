@@ -129,10 +129,20 @@ class SupabasePipeline:
     def process_item(self, item, spider):
         table = "posts" if isinstance(item, PostItem) else "products"
         data = dict(item)
-        try:
-            self.client.table(table).upsert(data, on_conflict="site,url").execute()
-        except Exception as e:
-            spider.logger.error(f"Supabase upsert failed for {item.get('url')}: {e}")
+        for attempt in range(1, 4):
+            try:
+                self.client.table(table).upsert(data, on_conflict="site,url").execute()
+                break
+            except Exception as e:
+                spider.logger.warning(
+                    f"Supabase upsert attempt {attempt}/3 failed for {item.get('url')}: {e}"
+                )
+                if attempt == 3:
+                    spider.logger.error(
+                        f"Supabase upsert FAILED after 3 retries for {item.get('url')}"
+                    )
+                    from scrapy.exceptions import DropItem
+                    raise DropItem(f"Supabase upsert failed after 3 attempts: {item.get('url')}")
         return item
 
     def close_spider(self, spider):

@@ -7,6 +7,7 @@ from supabase import create_client
 from ..items import PostItem
 from ..prompts.reddit import REDDIT_PROMPT
 from ..llm_extractor import llm_fallback
+from ..utils import FakeFailure
 
 
 class RedditSpider(scrapy.Spider):
@@ -225,8 +226,3 @@ class RedditSpider(scrapy.Spider):
         )
 
 
-class FakeFailure:
-    """Minimal failure-like object for fallback dispatch."""
-
-    def __init__(self, response):
-        self.request = response.request
