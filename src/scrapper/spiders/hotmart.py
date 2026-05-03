@@ -1,17 +1,21 @@
 import json
 import re
 from typing import Any
+from urllib.parse import quote_plus
 
 import scrapy
 from scrapy import Request
 
 from ..items import ProductItem
+from ..prompts.hotmart import HOTMART_PROMPT
+from ..llm_extractor import llm_fallback
 
 
 class HotmartSpider(scrapy.Spider):
     name = "hotmart"
     site = "hotmart"
     site_type = "product"
+    LLM_PROMPT = HOTMART_PROMPT
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 2,
@@ -27,11 +31,11 @@ class HotmartSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "marketing")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://hotmart.com/en/marketplace/search?q={query}"
+        url = f"https://hotmart.com/en/marketplace/search?q={quote_plus(query)}"
 
         if self._api_endpoint_cache:
             page = 1
-            api_url = self._api_endpoint_cache + f"?q={query}&page={page}&size={limit}"
+            api_url = self._api_endpoint_cache + f"?q={quote_plus(query)}&page={page}&size={limit}"
             yield Request(
                 api_url,
                 callback=self.parse_api,
@@ -100,7 +104,7 @@ class HotmartSpider(scrapy.Spider):
                 self._api_endpoint_cache = best
                 self.logger.info(f"Cached API endpoint: {best}")
                 page_num = 1
-                api_url = f"{best}?q={query}&page={page_num}&size={limit}"
+                api_url = f"{best}?q={quote_plus(query)}&page={page_num}&size={limit}"
                 yield Request(
                     api_url,
                     callback=self.parse_api,
@@ -149,7 +153,7 @@ class HotmartSpider(scrapy.Spider):
                 next_page = page + 1
                 api_url = (
                     self._api_endpoint_cache
-                    + f"?q={query}&page={next_page}&size={limit}"
+                    + f"?q={quote_plus(query)}&page={next_page}&size={limit}"
                 )
                 yield Request(
                     api_url,
@@ -217,7 +221,7 @@ class HotmartSpider(scrapy.Spider):
 
     def _fallback_to_playwright(self, failure, query, limit):
         """Fallback: use Playwright DOM scraping."""
-        url = f"https://hotmart.com/en/marketplace/search?q={query}"
+        url = f"https://hotmart.com/en/marketplace/search?q={quote_plus(query)}"
         yield Request(
             url,
             callback=self.parse_dom,
@@ -286,6 +290,11 @@ class HotmartSpider(scrapy.Spider):
                 availability="",
                 metadata={"query": query, "strategy": "playwright"},
             )
+
+        if count == 0:
+            self.logger.warning("DOM selectors found nothing, trying LLM fallback")
+            yield from llm_fallback(self, response, ProductItem)
+            return
 
         if count >= limit:
             return
