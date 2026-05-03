@@ -70,6 +70,14 @@ class TestMetricsDashboard:
             assert "const METRICS =" in content
             assert '"runs"' in content
 
+    def test_build_dashboard_creates_metrics_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nonexistent = str(Path(tmpdir) / "new_metrics_dir")
+            ext = MetricsDashboard(metrics_dir=nonexistent)
+            ext._build_dashboard()
+            assert Path(nonexistent).is_dir()
+            assert (Path(nonexistent) / "dashboard.html").exists()
+
     def test_build_dashboard_no_crash_on_missing_metrics(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ext = MetricsDashboard(metrics_dir=tmpdir)

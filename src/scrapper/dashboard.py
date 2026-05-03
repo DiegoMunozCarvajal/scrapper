@@ -24,6 +24,7 @@ class MetricsDashboard:
         self._build_dashboard()
 
     def _build_dashboard(self):
+        Path(self.metrics_dir).mkdir(parents=True, exist_ok=True)
         metrics_path = Path(self.metrics_dir) / "metrics.json"
         if not metrics_path.exists():
             data = {"runs": [], "generated_at": datetime.now(timezone.utc).isoformat()}
