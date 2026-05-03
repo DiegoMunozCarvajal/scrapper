@@ -286,23 +286,30 @@ class HotmartSpider(scrapy.Spider):
         if count >= limit:
             return
 
-        next_page = page + 1
-        yield Request(
-            response.url,
-            callback=self.parse_dom,
-            meta={
-                "playwright": True,
-                "playwright_page_methods": [
-                    PageMethod("wait_for_timeout", 1000),
-                    PageMethod(_click_load_more),
-                ],
-                "query": query,
-                "limit": limit,
-                "page": next_page,
-                "strategy": "playwright",
-            },
-            dont_filter=True,
-        )
+        load_more_result = True
+        if page > 1:
+            methods = response.meta.get("playwright_page_methods") or []
+            if len(methods) >= 2:
+                load_more_result = bool(methods[1].result)
+
+        if load_more_result:
+            next_page = page + 1
+            yield Request(
+                response.url,
+                callback=self.parse_dom,
+                meta={
+                    "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_timeout", 1000),
+                        PageMethod(_click_load_more),
+                    ],
+                    "query": query,
+                    "limit": limit,
+                    "page": next_page,
+                    "strategy": "playwright",
+                },
+                dont_filter=True,
+            )
 
 
 def _parse_price(text):
