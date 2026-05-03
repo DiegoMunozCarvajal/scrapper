@@ -153,10 +153,14 @@ class HotmartSpider(scrapy.Spider):
     def _extract_products_from_json(self, data):
         """Extract product dicts from JSON structure (tries multiple paths)."""
         products = []
+        visited = set()
 
         def _search(obj, depth=0):
-            if depth > 10:
+            obj_id = id(obj)
+            if obj_id in visited or depth > 10:
                 return
+            visited.add(obj_id)
+
             if isinstance(obj, dict):
                 if "name" in obj and "url" in obj:
                     price = None

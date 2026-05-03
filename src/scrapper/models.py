@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -34,4 +34,4 @@ class ScrapeResult:
     query: str
     posts: list[Post] = field(default_factory=list)
     products: list[Product] = field(default_factory=list)
-    scraped_at: datetime = field(default_factory=datetime.now)
+    scraped_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

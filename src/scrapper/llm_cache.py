@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class LLMCache:
@@ -24,7 +24,7 @@ class LLMCache:
 
     def get(self, key):
         """Retrieve a cached value by key, returning None if missing or expired."""
-        expiry = (datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=self.ttl)).isoformat()
+        expiry = (datetime.now(timezone.utc) - timedelta(seconds=self.ttl)).isoformat()
         with self._lock:
             row = self.db.execute(
                 "SELECT result FROM cache WHERE key = ? AND created_at > ?",
@@ -37,7 +37,7 @@ class LLMCache:
         with self._lock:
             self.db.execute(
                 "INSERT OR REPLACE INTO cache (key, result, created_at) VALUES (?, ?, ?)",
-                (key, json.dumps(value), datetime.now(UTC).replace(tzinfo=None).isoformat()),
+                (key, json.dumps(value), datetime.now(timezone.utc).isoformat()),
             )
             self.db.commit()
 

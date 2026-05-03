@@ -1,6 +1,6 @@
 """Scrapy extensions for monitoring and alerting."""
 
-import fcntl
+import portalocker
 import json
 import time
 from datetime import datetime, timezone
@@ -125,7 +125,7 @@ class StatsLogger:
         metrics_file = metrics_path / "metrics.json"
 
         with open(metrics_file, "a+") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            portalocker.lock(f, portalocker.LOCK_EX)
             try:
                 f.seek(0)
                 content = f.read()
@@ -154,7 +154,7 @@ class StatsLogger:
                 f.truncate()
                 f.write(json.dumps(data, indent=2))
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                portalocker.unlock(f)
 
 
 class EmailAlerter:

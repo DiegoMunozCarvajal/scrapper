@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
 from playwright.async_api import BrowserContext, Page
 from playwright_stealth import StealthConfig
 from scrapy import Request
@@ -53,8 +54,8 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                     Path(f"cookies/{name}.json").write_text(
                         json.dumps(state.get("cookies", []))
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to save cookies for context '{name}': {e}")
             context.on("close", lambda ctx: asyncio.ensure_future(save_on_close(ctx)))
 
         config = StealthConfig()
@@ -108,7 +109,7 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                     scroll_y = random.randint(100, 400)
                     await page.evaluate(f"window.scrollBy(0, {scroll_y})")
                     await page.wait_for_timeout(random.randint(200, 800))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Human simulation failed for {request.url}: {e}")
 
         return response
