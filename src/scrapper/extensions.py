@@ -10,6 +10,8 @@ from urllib.request import Request, urlopen
 from scrapy import signals
 from loguru import logger
 
+_log_handlers_configured = False
+
 
 class StatsLogger:
     """Log scraping stats at spider completion and persist to metrics.json."""
@@ -28,8 +30,44 @@ class StatsLogger:
         crawler.signals.connect(ext.spider_closed, signal=signals.spider_closed)
         return ext
 
+    @staticmethod
+    def _setup_log_rotation():
+        global _log_handlers_configured
+        if _log_handlers_configured:
+            return
+        _log_handlers_configured = True
+
+        import logging
+        from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+
+        root = logging.getLogger()
+        Path("logs").mkdir(parents=True, exist_ok=True)
+
+        from . import settings
+
+        size_handler = RotatingFileHandler(
+            settings.LOG_FILE_SIZE,
+            maxBytes=settings.LOG_FILE_MAX_BYTES,
+            backupCount=settings.LOG_FILE_BACKUP_COUNT,
+        )
+        size_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+        ))
+        root.addHandler(size_handler)
+
+        time_handler = TimedRotatingFileHandler(
+            settings.LOG_FILE_TIME,
+            when=settings.LOG_FILE_TIME_WHEN,
+            backupCount=settings.LOG_FILE_TIME_BACKUP,
+        )
+        time_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+        ))
+        root.addHandler(time_handler)
+
     def spider_opened(self, spider):
         self.start_time = time.time()
+        self._setup_log_rotation()
         logger.info(f"[{spider.name}] Spider opened")
 
     def spider_closed(self, spider, reason):

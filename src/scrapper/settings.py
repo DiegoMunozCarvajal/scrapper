@@ -87,8 +87,18 @@ ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
 METRICS_DIR = "metrics"
 METRICS_MAX_RUNS = 100
 
-LOG_LEVEL = "INFO"
-LOG_FILE = "scrapy.log"
+LOG_ENABLED = True
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Size-based rotation: 5 files x 5MB
+LOG_FILE_SIZE = "logs/scrapy.log"
+LOG_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5MB
+LOG_FILE_BACKUP_COUNT = 5
+
+# Time-based rotation: daily, keep 7 days
+LOG_FILE_TIME = "logs/scrapy-daily.log"
+LOG_FILE_TIME_WHEN = "midnight"
+LOG_FILE_TIME_BACKUP = 7
 
 # ── Cookie persistence (for login sites) ──────
 COOKIE_SAVE_ENABLED = True

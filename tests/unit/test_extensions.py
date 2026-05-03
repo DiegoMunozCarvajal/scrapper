@@ -172,3 +172,72 @@ class TestStatsLoggerMetrics:
 
             data = json.loads(Path(tmpdir, "metrics.json").read_text())
             assert data["runs"][0]["status"] == "failed"
+
+
+import logging
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+
+
+class TestLogRotation:
+    def test_log_rotation_settings_exist(self):
+        from scrapper import settings
+        assert settings.LOG_FILE_SIZE == "logs/scrapy.log"
+        assert settings.LOG_FILE_MAX_BYTES == 5 * 1024 * 1024
+        assert settings.LOG_FILE_BACKUP_COUNT == 5
+        assert settings.LOG_FILE_TIME == "logs/scrapy-daily.log"
+        assert settings.LOG_FILE_TIME_WHEN == "midnight"
+        assert settings.LOG_FILE_TIME_BACKUP == 7
+
+    def test_setup_log_rotation_adds_handlers(self, monkeypatch):
+        import scrapper.extensions as ext_mod
+
+        # Reset global guard before test
+        ext_mod._log_handlers_configured = False
+
+        root = logging.getLogger()
+
+        # Remove any existing rotation handlers from previous tests
+        handlers_to_remove = []
+        for h in root.handlers[:]:
+            if isinstance(h, (RotatingFileHandler, TimedRotatingFileHandler)):
+                handlers_to_remove.append(h)
+                root.removeHandler(h)
+
+        initial_handlers = len(root.handlers)
+
+        from scrapper.extensions import StatsLogger
+        ext = StatsLogger(metrics_dir="/tmp/fake")
+        Path("/tmp/fake/logs").mkdir(parents=True, exist_ok=True)
+        ext._setup_log_rotation()
+
+        assert len(root.handlers) >= initial_handlers + 2
+
+        # Cleanup: remove handlers added by test
+        for h in root.handlers[initial_handlers:]:
+            root.removeHandler(h)
+
+        # Restore previously existing rotation handlers
+        for h in handlers_to_remove:
+            root.addHandler(h)
+
+        # Reset global guard
+        ext_mod._log_handlers_configured = False
+
+    def test_setup_log_rotation_called_once(self, monkeypatch):
+        from scrapper.extensions import StatsLogger
+        import scrapper.extensions as ext_mod
+
+        root = logging.getLogger()
+        initial_count = len(root.handlers)
+
+        ext = StatsLogger(metrics_dir="/tmp/fake")
+        Path("/tmp/fake/logs").mkdir(parents=True, exist_ok=True)
+        ext._setup_log_rotation()
+        first_count = len(root.handlers)
+        ext._setup_log_rotation()
+
+        assert len(root.handlers) == first_count
+
+        for h in root.handlers[initial_count:]:
+            root.removeHandler(h)
+        ext_mod._log_handlers_configured = False
