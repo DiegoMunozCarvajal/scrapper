@@ -12,13 +12,14 @@ class PostItem(scrapy.Item):
     comment_count = scrapy.Field(default=0)
     published_at = scrapy.Field()
     metadata = scrapy.Field(default={})
+    quality_issues = scrapy.Field()
     scraped_at = scrapy.Field()
 
     def __getitem__(self, key):
         try:
             return super().__getitem__(key)
         except KeyError:
-            defaults = {"content": "", "score": 0, "comment_count": 0, "metadata": {}}
+            defaults = {"content": "", "score": 0, "comment_count": 0, "metadata": {}, "quality_issues": []}
             if key in defaults:
                 return defaults[key]
             raise
@@ -40,13 +41,14 @@ class ProductItem(scrapy.Item):
     seller = scrapy.Field()
     availability = scrapy.Field()
     metadata = scrapy.Field(default={})
+    quality_issues = scrapy.Field()
     scraped_at = scrapy.Field()
 
     def __getitem__(self, key):
         try:
             return super().__getitem__(key)
         except KeyError:
-            defaults = {"currency": "USD", "review_count": 0, "metadata": {}}
+            defaults = {"currency": "USD", "review_count": 0, "metadata": {}, "quality_issues": []}
             if key in defaults:
                 return defaults[key]
             raise

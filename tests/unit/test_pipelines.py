@@ -58,7 +58,7 @@ class TestDataQualityPipeline:
         )
         result = pipe.process_item(item, FakeSpider())
         assert result is item
-        assert "quality_issues" not in item
+        assert item.get("quality_issues") == []
 
     def test_invalid_url_scheme_flagged(self):
         pipe = DataQualityPipeline()
@@ -101,7 +101,7 @@ class TestDataQualityPipeline:
             content=None,
         )
         pipe.process_item(item, FakeSpider())
-        assert "quality_issues" not in item
+        assert item.get("quality_issues") == []
 
     def test_price_invalid_flagged(self):
         pipe = DataQualityPipeline()
@@ -156,7 +156,7 @@ class TestDataQualityPipeline:
             price=None,
         )
         pipe.process_item(item, FakeSpider())
-        assert "quality_issues" not in item
+        assert item.get("quality_issues") == []
 
     def test_close_spider_reports_stats(self):
         pipe = DataQualityPipeline()

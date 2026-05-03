@@ -19,7 +19,8 @@ class DataQualityPipeline:
         self._stats[spider.name]["total"] += 1
         if issues:
             self._stats[spider.name]["issues"] += 1
-            item._values.setdefault("quality_issues", []).extend(issues)
+            existing = item.get("quality_issues") or []
+            item["quality_issues"] = existing + issues
         return item
 
     def close_spider(self, spider):
