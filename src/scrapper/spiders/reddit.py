@@ -1,14 +1,20 @@
+from urllib.parse import quote_plus
+
 import scrapy
 from dateutil import parser as date_parser
 from supabase import create_client
 
 from ..items import PostItem
+from ..prompts.reddit import REDDIT_PROMPT
+from ..llm_extractor import llm_fallback
 
 
 class RedditSpider(scrapy.Spider):
     name = "reddit"
     site = "reddit"
     site_type = "post"
+
+    LLM_PROMPT = REDDIT_PROMPT
 
     custom_settings = {
         "DOWNLOAD_HANDLERS": {},
@@ -47,7 +53,7 @@ class RedditSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "python")
         limit = int(getattr(self, "limit", 10))
-        rss_url = f"https://www.reddit.com/search.rss?q={query}&sort=relevance&limit={limit}"
+        rss_url = f"https://www.reddit.com/search.rss?q={quote_plus(query)}&sort=relevance&limit={limit}"
         yield scrapy.Request(
             rss_url,
             callback=self.parse_rss,
@@ -58,7 +64,7 @@ class RedditSpider(scrapy.Spider):
     def _fallback_to_search(self, failure):
         query = failure.request.meta["query"]
         limit = failure.request.meta["limit"]
-        url = f"https://old.reddit.com/search?q={query}&sort=relevance&type=link"
+        url = f"https://old.reddit.com/search?q={quote_plus(query)}&sort=relevance&type=link"
         yield scrapy.Request(url, meta={"query": query, "limit": limit, "count": 0})
 
     def parse_rss(self, response):
@@ -109,6 +115,7 @@ class RedditSpider(scrapy.Spider):
         query = response.meta["query"]
         limit = response.meta["limit"]
         count = response.meta["count"]
+        start_count = count
 
         cards = response.css("div.search-result-link")
         for card in cards:
@@ -126,6 +133,11 @@ class RedditSpider(scrapy.Spider):
                     callback=self.parse_post_page,
                     meta={"query": query, "limit": limit, "count": count},
                 )
+
+        if count == start_count:
+            self.logger.warning("HTML selectors found nothing, trying LLM fallback")
+            yield from llm_fallback(self, response, PostItem)
+            return
 
         if count < limit:
             next_link = response.css('a[rel="nofollow next"]::attr(href)').get()
