@@ -1,0 +1,12 @@
+{
+  "products": [
+    {
+      "title": "Python Masterclass",
+      "url": "/hotmart/product-1",
+      "price": 49.99,
+      "rating": 4.8,
+      "review_count": 234,
+      "seller": "John Doe"
+    }
+  ]
+}
