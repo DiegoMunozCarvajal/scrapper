@@ -9,7 +9,7 @@ class TestStealthHandlerConfig:
         from scrapper import settings
 
         handler = settings.DOWNLOAD_HANDLERS.get("https", "")
-        assert "stealth_handler" in handler
+        assert "scrapy_playwright_stealth" in handler
         assert "ScrapyPlaywrightStealthDownloadHandler" in handler
 
     def test_headless_env_var_defaults_to_true(self):

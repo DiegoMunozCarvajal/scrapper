@@ -1,5 +1,7 @@
 import json
+import logging
 import tempfile
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -149,10 +151,6 @@ class TestStatsLoggerMetrics:
 
             data = json.loads(Path(tmpdir, "metrics.json").read_text())
             assert data["runs"][0]["status"] == "failed"
-
-
-import logging
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
 
 class TestLogRotation:
