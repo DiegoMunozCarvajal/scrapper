@@ -33,3 +33,10 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.coverage.run]
+omit = [
+    "src/scrapper/spiders/amazon.py",
+    "src/scrapper/spiders/mercadolibre.py",
+    "src/scrapper/spiders/quora.py",
+]

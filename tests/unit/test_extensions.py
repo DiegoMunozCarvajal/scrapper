@@ -350,3 +350,54 @@ class TestEmailAlerter:
         spider.crawler.stats = FakeStats()
         with patch("smtplib.SMTP", side_effect=Exception("Connection refused")):
             ext.spider_closed(spider, "finished")
+
+
+class TestEmailAlerterIntegration:
+    def test_full_flow_stats_to_email(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from scrapper.extensions import EmailAlerter, StatsLogger
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stats_ext = StatsLogger(metrics_dir=tmpdir, metrics_max_runs=100)
+            stats_ext.start_time = 1000.0
+            spider = FakeSpider()
+            spider.name = "test_spider"
+            stats = FakeStats()
+            spider.crawler = MagicMock()
+            spider.crawler.stats = stats
+            with patch("time.time", return_value=1005.0):
+                stats_ext.spider_closed(spider, "finished")
+
+            email_ext = EmailAlerter("h", 587, "a@b.com", "pw", "c@d.com", metrics_dir=tmpdir)
+            anomaly = email_ext._detect_anomaly(spider)
+            assert anomaly is None
+
+            for i in range(9):
+                run = {
+                    "spider": "test_spider", "items": 10, "errors": 0, "status": "finished",
+                    "started_at": f"2026-05-0{i+1}T00:00:00+00:00",
+                    "finished_at": f"2026-05-0{i+1}T00:00:05+00:00",
+                    "reason": "finished", "responses": 2,
+                    "elapsed_seconds": 5.0, "rate_per_minute": 120.0,
+                }
+                metrics_path = Path(tmpdir) / "metrics.json"
+                data = json.loads(metrics_path.read_text())
+                data["runs"].append(run)
+                metrics_path.write_text(json.dumps(data))
+
+            run = {
+                "spider": "test_spider", "items": 2, "errors": 0, "status": "finished",
+                "started_at": "2026-05-10T00:00:00+00:00",
+                "finished_at": "2026-05-10T00:00:05+00:00",
+                "reason": "finished", "responses": 2,
+                "elapsed_seconds": 5.0, "rate_per_minute": 24.0,
+            }
+            data = json.loads(metrics_path.read_text())
+            data["runs"].append(run)
+            metrics_path.write_text(json.dumps(data))
+
+            anomaly = email_ext._detect_anomaly(spider)
+            assert anomaly is not None
+            assert "items 2 vs avg 10" in anomaly

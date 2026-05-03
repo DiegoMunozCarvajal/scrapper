@@ -1,6 +1,7 @@
 from scrapper.middlewares import (
     ProxyRotationMiddleware,
     UARotationMiddleware,
+    RetryWithBackoffMiddleware,
 )
 from scrapper.utils import USER_AGENTS
 
@@ -76,3 +77,12 @@ class TestUARotationMiddleware:
         request = FakeRequest()
         mw.process_request(request, FakeSpider())
         assert request.headers["User-Agent"] in USER_AGENTS
+
+
+class TestRetryWithBackoffMiddleware:
+    def test_retry_middleware_importable(self):
+        assert RetryWithBackoffMiddleware is not None
+
+    def test_retry_middleware_has_expected_methods(self):
+        assert hasattr(RetryWithBackoffMiddleware, "process_response")
+        assert hasattr(RetryWithBackoffMiddleware, "process_exception")
