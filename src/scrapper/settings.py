@@ -73,7 +73,7 @@ DOWNLOADER_MIDDLEWARES = {
 
 EXTENSIONS = {
     "scrapper.extensions.StatsLogger": 400,
-    "scrapper.extensions.ErrorAlerter": 500,
+    "scrapper.extensions.EmailAlerter": 500,
     "scrapper.dashboard.MetricsDashboard": 600,
 }
 
@@ -82,7 +82,13 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 PROXY_LIST = os.getenv("PROXY_LIST", "")
 
-ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
+# ── Email alerts ──────────────────────────
+ALERT_SMTP_HOST = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")
+ALERT_SMTP_PORT = int(os.getenv("ALERT_SMTP_PORT", "587"))
+ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM", "")
+ALERT_EMAIL_PASSWORD = os.getenv("ALERT_EMAIL_PASSWORD", "")
+ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "")
+ALERT_ERROR_THRESHOLD = int(os.getenv("ALERT_ERROR_THRESHOLD", "5"))
 
 # ── Metrics persistence ──────────────────
 METRICS_DIR = "metrics"

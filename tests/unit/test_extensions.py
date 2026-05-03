@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scrapper.extensions import StatsLogger, ErrorAlerter
+from scrapper.extensions import StatsLogger
 
 
 class FakeCrawler:
@@ -33,29 +33,6 @@ class TestStatsLogger:
         spider = FakeSpider()
         ext.spider_opened(spider)
         assert ext.start_time is not None
-
-
-class TestErrorAlerter:
-    def test_init(self):
-        ext = ErrorAlerter(webhook_url="")
-        assert ext.webhook_url == ""
-        assert ext.error_count == 0
-
-    def test_from_crawler(self):
-        crawler = FakeCrawler()
-        ext = ErrorAlerter.from_crawler(crawler)
-        assert ext.webhook_url == ""
-
-    def test_spider_error_counts(self):
-        ext = ErrorAlerter(webhook_url="")
-        spider = FakeSpider()
-        response = MagicMock()
-        response.url = "http://test.com"
-        failure = MagicMock()
-        failure.getErrorMessage.return_value = "Test error"
-
-        ext.spider_error(failure, response, spider)
-        assert ext.error_count == 1
 
 
 class TestStatsLoggerMetrics:
@@ -241,3 +218,135 @@ class TestLogRotation:
         for h in root.handlers[initial_count:]:
             root.removeHandler(h)
         ext_mod._log_handlers_configured = False
+
+
+class FakeStats:
+    def get_value(self, key, default=0):
+        return {"item_scraped_count": 10, "response_received_count": 2, "log_count/ERROR": 7}.get(key, default)
+
+
+class TestEmailAlerter:
+    def test_init(self):
+        from scrapper.extensions import EmailAlerter
+        ext = EmailAlerter(
+            smtp_host="smtp.test.com", smtp_port=587,
+            from_addr="a@b.com", password="pw", to_addr="c@d.com",
+        )
+        assert ext.smtp_host == "smtp.test.com"
+        assert ext.error_count == 0
+
+    def test_from_crawler_reads_settings(self):
+        from scrapper.extensions import EmailAlerter
+        crawler = FakeCrawler()
+        crawler.settings = {
+            "ALERT_SMTP_HOST": "mx.example.com",
+            "ALERT_SMTP_PORT": 2525,
+            "ALERT_EMAIL_FROM": "from@x.com",
+            "ALERT_EMAIL_PASSWORD": "secret",
+            "ALERT_EMAIL_TO": "to@x.com",
+            "METRICS_DIR": "mymetrics",
+            "ALERT_ERROR_THRESHOLD": 10,
+        }
+        ext = EmailAlerter.from_crawler(crawler)
+        assert ext.smtp_host == "mx.example.com"
+        assert ext.smtp_port == 2525
+        assert ext.from_addr == "from@x.com"
+        assert ext.to_addr == "to@x.com"
+        assert ext.metrics_dir == "mymetrics"
+        assert ext.error_threshold == 10
+
+    def test_spider_error_counts(self):
+        from scrapper.extensions import EmailAlerter
+        ext = EmailAlerter("h", 587, "a", "p", "t")
+        failure = MagicMock()
+        response = MagicMock()
+        response.url = "https://test.com"
+        spider = FakeSpider()
+        spider.name = "test"
+        ext.spider_error(failure, response, spider)
+        ext.spider_error(failure, response, spider)
+        assert ext.error_count == 2
+
+    def test_email_not_sent_without_credentials(self):
+        from scrapper.extensions import EmailAlerter
+        ext = EmailAlerter("h", 587, "", "", "")
+        ext.error_count = 10
+        spider = MagicMock()
+        spider.name = "test"
+        spider.crawler = MagicMock()
+        spider.crawler.stats = FakeStats()
+        with patch("smtplib.SMTP") as mock_smtp:
+            ext.spider_closed(spider, "finished")
+            mock_smtp.assert_not_called()
+
+    def test_email_sent_on_critical_error(self):
+        from scrapper.extensions import EmailAlerter
+        ext = EmailAlerter("h", 587, "from@x.com", "pw", "to@x.com")
+        ext.error_count = 10
+        spider = MagicMock()
+        spider.name = "test"
+        spider.crawler = MagicMock()
+        spider.crawler.stats = FakeStats()
+        with patch("smtplib.SMTP") as mock_smtp:
+            ext.spider_closed(spider, "finished")
+            mock_smtp.assert_called_once()
+
+    def test_anomaly_detects_item_drop(self):
+        from scrapper.extensions import EmailAlerter
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metrics_file = Path(tmpdir) / "metrics.json"
+            runs_data = {"runs": [
+                {"spider": "test", "items": 10, "errors": 0, "status": "finished",
+                 "started_at": "2026-05-03T00:00:00+00:00",
+                 "finished_at": "2026-05-03T00:00:05+00:00", "reason": "finished",
+                 "responses": 2, "elapsed_seconds": 5.0, "rate_per_minute": 120.0}
+                for _ in range(10)
+            ]}
+            metrics_file.write_text(json.dumps(runs_data))
+
+            ext = EmailAlerter("h", 587, "from@x.com", "pw", "to@x.com", metrics_dir=tmpdir)
+            spider = MagicMock()
+            spider.name = "test"
+
+            result = ext._detect_anomaly(spider)
+            assert result is None
+
+            runs_data["runs"].append({
+                "spider": "test", "items": 2, "errors": 0, "status": "failed",
+                "started_at": "2026-05-03T01:00:00+00:00",
+                "finished_at": "2026-05-03T01:00:05+00:00", "reason": "cancelled",
+                "responses": 2, "elapsed_seconds": 5.0, "rate_per_minute": 24.0,
+            })
+            metrics_file.write_text(json.dumps(runs_data))
+
+            result = ext._detect_anomaly(spider)
+            assert result is not None
+            assert "items 2 vs avg 10" in result
+            assert "status=failed" in result
+
+    def test_anomaly_no_false_positive_on_low_baseline(self):
+        from scrapper.extensions import EmailAlerter
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metrics_file = Path(tmpdir) / "metrics.json"
+            metrics_file.write_text(json.dumps({"runs": [
+                {"spider": "test", "items": 1, "errors": 0, "status": "finished",
+                 "started_at": "2026-05-03T00:00:00+00:00",
+                 "finished_at": "2026-05-03T00:00:05+00:00", "reason": "finished",
+                 "responses": 1, "elapsed_seconds": 5.0, "rate_per_minute": 12.0}
+            ]}))
+            ext = EmailAlerter("h", 587, "from@x.com", "pw", "to@x.com", metrics_dir=tmpdir)
+            spider = MagicMock()
+            spider.name = "test"
+            result = ext._detect_anomaly(spider)
+            assert result is None
+
+    def test_smtp_exception_handled_gracefully(self):
+        from scrapper.extensions import EmailAlerter
+        ext = EmailAlerter("h", 587, "from@x.com", "pw", "to@x.com")
+        ext.error_count = 10
+        spider = MagicMock()
+        spider.name = "test"
+        spider.crawler = MagicMock()
+        spider.crawler.stats = FakeStats()
+        with patch("smtplib.SMTP", side_effect=Exception("Connection refused")):
+            ext.spider_closed(spider, "finished")

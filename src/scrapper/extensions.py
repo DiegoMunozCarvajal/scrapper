@@ -5,7 +5,6 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from scrapy import signals
 from loguru import logger
@@ -147,35 +146,110 @@ class StatsLogger:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
-class ErrorAlerter:
-    """POST to a webhook URL when a spider encounters critical errors."""
+class EmailAlerter:
+    """Send email alerts on critical errors and metric anomalies."""
 
-    def __init__(self, webhook_url: str):
-        self.webhook_url = webhook_url
+    def __init__(self, smtp_host, smtp_port, from_addr, password, to_addr,
+                 metrics_dir="metrics", error_threshold=5):
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.from_addr = from_addr
+        self.password = password
+        self.to_addr = to_addr
+        self.metrics_dir = metrics_dir
+        self.error_threshold = error_threshold
         self.error_count = 0
 
     @classmethod
     def from_crawler(cls, crawler):
-        ext = cls(webhook_url=crawler.settings.get("ALERT_WEBHOOK_URL", ""))
+        ext = cls(
+            smtp_host=crawler.settings.get("ALERT_SMTP_HOST", "smtp.gmail.com"),
+            smtp_port=int(crawler.settings.get("ALERT_SMTP_PORT", 587)),
+            from_addr=crawler.settings.get("ALERT_EMAIL_FROM", ""),
+            password=crawler.settings.get("ALERT_EMAIL_PASSWORD", ""),
+            to_addr=crawler.settings.get("ALERT_EMAIL_TO", ""),
+            metrics_dir=crawler.settings.get("METRICS_DIR", "metrics"),
+            error_threshold=int(crawler.settings.get("ALERT_ERROR_THRESHOLD", 5)),
+        )
         crawler.signals.connect(ext.spider_error, signal=signals.spider_error)
         crawler.signals.connect(ext.spider_closed, signal=signals.spider_closed)
         return ext
 
     def spider_error(self, failure, response, spider):
         self.error_count += 1
-        if self.error_count <= 5:
-            logger.error(
-                f"[{spider.name}] Error on {response.url if response else 'unknown'}: "
-                f"{failure.getErrorMessage()}"
-            )
 
     def spider_closed(self, spider, reason):
-        if self.error_count > 5 and self.webhook_url:
-            payload = json.dumps({
-                "content": f":warning: **{spider.name}** closed with **{self.error_count} errors**. Reason: `{reason}`"
-            }).encode()
-            try:
-                req = Request(self.webhook_url, data=payload, headers={"Content-Type": "application/json"})
-                urlopen(req, timeout=5)
-            except Exception as e:
-                logger.error(f"Failed to send alert webhook: {e}")
+        alerts = []
+
+        if self.error_count > self.error_threshold:
+            alerts.append(
+                ("CRITICAL", f"{spider.name}: {self.error_count} errors. Reason: {reason}")
+            )
+
+        anomaly = self._detect_anomaly(spider)
+        if anomaly:
+            alerts.append(("WARNING", anomaly))
+
+        if alerts and self.from_addr and self.password:
+            self._send_email(spider.name, alerts)
+
+    def _detect_anomaly(self, spider) -> str | None:
+        import json
+        from pathlib import Path
+
+        metrics_path = Path(self.metrics_dir) / "metrics.json"
+        if not metrics_path.exists():
+            return None
+
+        data = json.loads(metrics_path.read_text())
+        runs = [r for r in data["runs"] if r["spider"] == spider.name]
+        if len(runs) < 3:
+            return None
+
+        current = runs[-1]
+        historical = runs[-11:-1]
+
+        avg_items = sum(r["items"] for r in historical) / len(historical)
+        current_items = current.get("items", 0)
+        current_errors = current.get("errors", 0)
+
+        issues = []
+
+        if avg_items > 0 and current_items < avg_items * 0.5:
+            issues.append(
+                f"items {current_items} vs avg {avg_items:.0f} "
+                f"(-{100 - int(current_items / avg_items * 100)}%)"
+            )
+
+        if current_errors > 5:
+            issues.append(f"errors {current_errors}")
+
+        if current.get("status") != "finished":
+            issues.append(f"status={current.get('status')}")
+
+        if issues:
+            return f"{spider.name}: {', '.join(issues)}"
+        return None
+
+    def _send_email(self, spider_name, alerts):
+        import smtplib
+        from email.mime.text import MIMEText
+
+        is_critical = any(a[0] == "CRITICAL" for a in alerts)
+        subject = f"[Scrapper] {spider_name} — {'CRITICAL' if is_critical else 'Warning'}"
+        body = "\n".join(f"[{level}] {msg}" for level, msg in alerts)
+        body += "\n\nDashboard: metrics/dashboard.html"
+
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = self.from_addr
+        msg["To"] = self.to_addr
+
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.from_addr, self.password)
+                server.send_message(msg)
+            logger.info(f"Alert email sent to {self.to_addr}")
+        except Exception as e:
+            logger.error(f"Failed to send alert email: {e}")
