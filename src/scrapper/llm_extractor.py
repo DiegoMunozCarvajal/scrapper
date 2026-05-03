@@ -3,8 +3,7 @@ import json
 import logging
 import os
 
-import openai
-from openai import OpenAI
+from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 
 from .llm_cache import LLMCache
 
@@ -43,10 +42,10 @@ class LLMExtractor:
                 items = data.get("products", data.get("posts", []))
                 if isinstance(items, list):
                     all_results.extend(items)
-            except (openai.RateLimitError, openai.AuthenticationError) as e:
+            except (RateLimitError, AuthenticationError) as e:
                 logger.error("OpenAI API error: %s", e)
                 return []
-            except openai.APIError as e:
+            except APIError as e:
                 logger.warning("OpenAI API error: %s", e)
                 return []
             except (json.JSONDecodeError, KeyError) as e:
@@ -87,19 +86,26 @@ class LLMExtractor:
 
 def llm_fallback(spider, response, item_class):
     """Shared LLM fallback for any spider. Yields item_class instances."""
-    if not os.getenv("OPENAI_API_KEY") or os.getenv("LLM_ENABLED", "true") == "false":
+    if not os.getenv("OPENAI_API_KEY") or os.getenv("LLM_ENABLED", "true").lower() in ("false", "0", "no"):
         spider.logger.warning("LLM fallback disabled or no API key, skipping")
+        return
+
+    prompt_template = getattr(spider, "LLM_PROMPT", None)
+    if not prompt_template:
+        spider.logger.warning("LLM fallback: spider has no LLM_PROMPT, skipping")
         return
 
     query = response.meta["query"]
     limit = int(response.meta.get("limit", 10))
     extractor = LLMExtractor()
 
+    site = getattr(spider, "site", "unknown")
+
     items = extractor.extract(
         html=response.text,
-        prompt_template=spider.LLM_PROMPT,
+        prompt_template=prompt_template,
         item_class=item_class,
-        site=spider.site,
+        site=site,
         query=query,
     )
 
@@ -107,5 +113,5 @@ def llm_fallback(spider, response, item_class):
         item_data.setdefault("metadata", {})
         item_data["metadata"]["strategy"] = "llm"
         item_data["metadata"]["query"] = query
-        item_data.setdefault("site", spider.site)
+        item_data.setdefault("site", site)
         yield item_class(item_data)

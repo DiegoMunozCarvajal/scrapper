@@ -15,6 +15,7 @@ class LLMCache:
         self._init_db()
 
     def _init_db(self):
+        self.db.execute("PRAGMA journal_mode=WAL;")
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS cache "
             "(key TEXT PRIMARY KEY, result TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
