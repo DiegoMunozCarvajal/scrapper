@@ -56,6 +56,7 @@ RAG_OUTPUT_DIR = "rag_output"
 
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
+    "scrapper.pipelines.DataQualityPipeline": 150,
     "scrapper.pipelines.DedupInMemoryPipeline": 200,
     "scrapper.pipelines.SupabasePipeline": 300,
 }
