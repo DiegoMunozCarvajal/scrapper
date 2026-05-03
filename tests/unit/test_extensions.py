@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from scrapper.extensions import StatsLogger, ErrorAlerter
 
 
@@ -103,7 +105,7 @@ class TestStatsLoggerMetrics:
             assert run["status"] == "finished"
             assert run["items"] == 10
             assert run["elapsed_seconds"] == 5.5
-            assert run["rate_per_minute"] == 109.0909090909091
+            assert run["rate_per_minute"] == pytest.approx(109.1, rel=0.01)
             assert "started_at" in run
             assert "finished_at" in run
 
@@ -153,3 +155,20 @@ class TestStatsLoggerMetrics:
             data = json.loads(metrics_file.read_text())
             assert data["runs"][0]["elapsed_seconds"] == 0
             assert data["runs"][0]["rate_per_minute"] == 0
+
+    def test_persist_metrics_unknown_reason_maps_to_failed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext = StatsLogger(metrics_dir=tmpdir, metrics_max_runs=100)
+            ext.start_time = 1000.0
+            spider = FakeSpider()
+            spider.name = "reddit"
+            stats = MagicMock()
+            stats.get_value.return_value = 0
+            spider.crawler = MagicMock()
+            spider.crawler.stats = stats
+
+            with patch("time.time", return_value=1005.0):
+                ext.spider_closed(spider, "shutdown")
+
+            data = json.loads(Path(tmpdir, "metrics.json").read_text())
+            assert data["runs"][0]["status"] == "failed"

@@ -1,7 +1,10 @@
 """Scrapy extensions for monitoring and alerting."""
 
+import fcntl
 import json
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 from scrapy import signals
@@ -57,9 +60,6 @@ class StatsLogger:
         self._persist_metrics(spider, reason, stats, elapsed, items)
 
     def _persist_metrics(self, spider, reason, stats, elapsed, items):
-        from datetime import datetime, timezone
-        from pathlib import Path
-
         now = datetime.now(timezone.utc)
         started_at = (
             datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat()
@@ -80,28 +80,33 @@ class StatsLogger:
             "responses": stats.get_value("response_received_count", 0),
             "errors": stats.get_value("log_count/ERROR", 0),
             "elapsed_seconds": round(elapsed, 1),
-            "rate_per_minute": items / elapsed * 60 if elapsed else 0,
+            "rate_per_minute": round(items / elapsed * 60, 1) if elapsed else 0,
         }
 
         metrics_path = Path(self.metrics_dir)
         metrics_path.mkdir(parents=True, exist_ok=True)
         metrics_file = metrics_path / "metrics.json"
 
-        if metrics_file.exists():
-            data = json.loads(metrics_file.read_text())
-        else:
-            data = {"runs": []}
+        with open(metrics_file, "a+") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                content = f.read()
+                data = json.loads(content) if content.strip() else {"runs": []}
+                data["runs"].append(run)
 
-        data["runs"].append(run)
+                # Prune oldest entries per spider if over max
+                spider_runs = [r for r in data["runs"] if r["spider"] == spider.name]
+                if len(spider_runs) > self.metrics_max_runs:
+                    excess = len(spider_runs) - self.metrics_max_runs
+                    keep_keys = {r["started_at"] for r in spider_runs[excess:]}
+                    data["runs"] = [r for r in data["runs"] if r["spider"] != spider.name or r["started_at"] in keep_keys]
 
-        # Prune oldest entries per spider if over max
-        spider_runs = [r for r in data["runs"] if r["spider"] == spider.name]
-        if len(spider_runs) > self.metrics_max_runs:
-            excess = len(spider_runs) - self.metrics_max_runs
-            keep_ids = {id(r) for r in spider_runs[excess:]}
-            data["runs"] = [r for r in data["runs"] if r["spider"] != spider.name or id(r) in keep_ids]
-
-        metrics_file.write_text(json.dumps(data, indent=2))
+                f.seek(0)
+                f.truncate()
+                f.write(json.dumps(data, indent=2))
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 class ErrorAlerter:
