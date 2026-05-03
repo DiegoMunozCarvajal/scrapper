@@ -99,19 +99,22 @@ def llm_fallback(spider, response, item_class):
     limit = int(response.meta.get("limit", 10))
     extractor = LLMExtractor()
 
-    site = getattr(spider, "site", "unknown")
+    try:
+        site = getattr(spider, "site", "unknown")
 
-    items = extractor.extract(
-        html=response.text,
-        prompt_template=prompt_template,
-        item_class=item_class,
-        site=site,
-        query=query,
-    )
+        items = extractor.extract(
+            html=response.text,
+            prompt_template=prompt_template,
+            item_class=item_class,
+            site=site,
+            query=query,
+        )
 
-    for item_data in items[:limit]:
-        item_data.setdefault("metadata", {})
-        item_data["metadata"]["strategy"] = "llm"
-        item_data["metadata"]["query"] = query
-        item_data.setdefault("site", site)
-        yield item_class(item_data)
+        for item_data in items[:limit]:
+            item_data.setdefault("metadata", {})
+            item_data["metadata"]["strategy"] = "llm"
+            item_data["metadata"]["query"] = query
+            item_data.setdefault("site", site)
+            yield item_class(item_data)
+    finally:
+        extractor.cache.close()
