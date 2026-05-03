@@ -8,7 +8,13 @@ services:
     volumes:
       - ./src:/scrapy/src
       - ./scrapy.cfg:/scrapy/scrapy.cfg
+      - ./scrapyd.conf:/scrapy/scrapyd.conf
       - scrapyd_data:/scrapy/data
+    environment:
+      REDDIT_QUERY: ${REDDIT_QUERY:-python}
+      REDDIT_LIMIT: ${REDDIT_LIMIT:-10}
+      HOTMART_QUERY: ${HOTMART_QUERY:-marketing}
+      HOTMART_LIMIT: ${HOTMART_LIMIT:-10}
     restart: unless-stopped
 
   scrapydweb:

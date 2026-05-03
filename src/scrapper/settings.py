@@ -94,6 +94,9 @@ ALERT_ERROR_THRESHOLD = int(os.getenv("ALERT_ERROR_THRESHOLD", "5"))
 METRICS_DIR = "metrics"
 METRICS_MAX_RUNS = 100
 
+# ── Scheduling ────────────────────────────
+SCHEDULE_ENABLED = os.getenv("SCHEDULE_ENABLED", "false").lower() in ("true", "1", "yes")
+
 LOG_ENABLED = True
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
