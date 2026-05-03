@@ -1,3 +1,5 @@
+# NOTE: Use str.replace("{html}", html) instead of .format() — the JSON
+# braces in this template would collide with Python's format string syntax.
 HOTMART_PROMPT = """\
 You are a web scraper assistant. Extract product information from this HTML page
 of Hotmart marketplace search results.

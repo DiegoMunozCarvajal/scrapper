@@ -1,3 +1,5 @@
+# NOTE: Use str.replace("{html}", html) instead of .format() — the JSON
+# braces in this template would collide with Python's format string syntax.
 REDDIT_PROMPT = """\
 You are a web scraper assistant. Extract Reddit posts from this search results
 page on old.reddit.com.
