@@ -42,7 +42,9 @@ class LLMCache:
 
     def close(self):
         """Close the underlying database connection."""
-        self.db.close()
+        with self._lock:
+            self.db.close()
+            self.db = None
 
     def __enter__(self):
         return self
