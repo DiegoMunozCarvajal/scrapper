@@ -15,14 +15,6 @@ def reddit_rss():
 
 
 @pytest.fixture
-def reddit_search_html():
-    path = FIXTURES_DIR / "reddit_search.html"
-    if path.exists():
-        return path.read_text()
-    return ""
-
-
-@pytest.fixture
 def hotmart_api_json():
     path = FIXTURES_DIR / "hotmart_api_response.json"
     return path.read_text()

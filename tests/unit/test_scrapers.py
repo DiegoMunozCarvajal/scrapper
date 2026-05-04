@@ -1,4 +1,4 @@
-from src.scrapper.models import Post, Product, ScrapeResult
+from scrapper.models import Post, Product, ScrapeResult
 
 
 class TestModels:

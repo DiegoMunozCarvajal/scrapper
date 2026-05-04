@@ -23,4 +23,4 @@ dbs/
 eggs/
 graphify-out/
 items/
-generate_schedule.py
+crontab.txt

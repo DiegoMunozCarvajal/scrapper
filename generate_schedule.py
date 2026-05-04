@@ -3,62 +3,95 @@
 
 Scrapyd 1.6.0 ignores the [schedule] section in scrapyd.conf,
 so we use system cron to POST to /schedule.json.
+
+Supports two spider configurations:
+  - "queries" key: {"query": "...", "limit": N} → reddit, hotmart
+  - "tasks" key:   {"url": "...", "type": "..."} → generic
 """
 
 import json
+import os
 import re
 from pathlib import Path
 
 QUERIES_FILE = Path(__file__).parent / "queries.json"
 CRONTAB_FILE = Path(__file__).parent / "crontab.txt"
 PROJECT = "scrapper"
-API_URL = "http://localhost:6800/schedule.json"
+API_URL = os.getenv("SCRAPYD_API_URL", "http://localhost:6800/schedule.json")
+
+
+def _crontab_curl(spider, cron, params, log_file="/app/logs/cron.log"):
+    """Build a crontab line with curl POST to Scrapyd."""
+    args = " ".join(
+        f'--data-urlencode "{k}={v}"'
+        for k, v in params.items()
+    )
+    return (
+        f'{cron} curl -s -X POST "{API_URL}" '
+        f'{args} '
+        f">> {log_file} 2>&1"
+    )
+
+
+def _scrapyd_conf(spider, cron, i, args_str):
+    """Build a scrapyd.conf schedule line."""
+    return (
+        f"{spider}_{i} = {cron} {PROJECT} {spider} "
+        f"{args_str} "
+        f"-s ROBOTSTXT_OBEY=False"
+    )
 
 
 def main():
     queries = json.loads(QUERIES_FILE.read_text())
 
-    lines = []
+    crontab_lines = []
+    conf_lines = []
+
     for spider, config in queries.items():
         cron = config["schedule"]
-        for i, q in enumerate(config["queries"], 1):
-            query = q["query"]
-            limit = q.get("limit", 10)
-            # Use --data-urlencode so curl handles encoding (no % in crontab)
-            curl_cmd = (
-                f'{cron} curl -s -X POST "{API_URL}" '
-                f'--data-urlencode "project={PROJECT}" '
-                f'--data-urlencode "spider={spider}" '
-                f'--data-urlencode "query={query}" '
-                f'--data-urlencode "limit={limit}" '
-                f'--data-urlencode "setting=ROBOTSTXT_OBEY=False" '
-                f">> /app/logs/cron.log 2>&1"
-            )
-            lines.append(curl_cmd)
-            print(f"  [{spider}] {cron} query={query!r} limit={limit}")
 
-    crontab = "\n".join(lines) + "\n"
-    CRONTAB_FILE.write_text(crontab)
-    print(f"[generator] Wrote {len(lines)} cron jobs to crontab.txt")
+        items = config.get("queries") or config.get("tasks") or []
+        for i, item in enumerate(items, 1):
+            if "query" in item:
+                # Standard spider (reddit, hotmart)
+                query = item["query"]
+                limit = item.get("limit", 10)
+                params = {
+                    "project": PROJECT,
+                    "spider": spider,
+                    "query": query,
+                    "limit": str(limit),
+                    "setting": "ROBOTSTXT_OBEY=False",
+                }
+                args_str = f'-a query="{query}" -a limit={limit}'
+                print(f"  [{spider}] {cron} query={query!r} limit={limit}")
+            else:
+                # Generic spider (url + type)
+                url = item["url"]
+                task_type = item.get("type", "article")
+                params = {
+                    "project": PROJECT,
+                    "spider": spider,
+                    "url": url,
+                    "type": task_type,
+                    "setting": "ROBOTSTXT_OBEY=False",
+                }
+                args_str = f'-a url="{url}" -a type={task_type}'
+                print(f"  [{spider}] {cron} url={url!r} type={task_type!r}")
+
+            crontab_lines.append(_crontab_curl(spider, cron, params))
+            conf_lines.append(_scrapyd_conf(spider, cron, i, args_str))
+
+    CRONTAB_FILE.write_text("\n".join(crontab_lines) + "\n")
+    print(f"[generator] Wrote {len(crontab_lines)} cron jobs to crontab.txt")
 
     # Also update scrapyd.conf schedule section for visibility (Scrapyd ignores it)
     conf_path = Path(__file__).parent / "scrapyd.conf"
     conf = conf_path.read_text()
-    schedule_lines = []
-    for spider, config in queries.items():
-        cron = config["schedule"]
-        for i, q in enumerate(config["queries"], 1):
-            job_name = f"{spider}_{i}"
-            query = q["query"]
-            limit = q.get("limit", 10)
-            schedule_lines.append(
-                f'{job_name} = {cron} {PROJECT} {spider} '
-                f'-a query="{query}" -a limit={limit} '
-                f'-s ROBOTSTXT_OBEY=False'
-            )
     conf = re.sub(
         r"\[schedule\].*",
-        "[schedule]\n" + "\n".join(schedule_lines) + "\n",
+        "[schedule]\n" + "\n".join(conf_lines) + "\n",
         conf,
         flags=re.DOTALL,
     )

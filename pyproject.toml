@@ -2,27 +2,27 @@
 name = "scrapper"
 version = "0.3.0"
 description = "Multi-site web scraper — Reddit, Hotmart (+ deprecated: Amazon, MercadoLibre, Quora)"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4"
 dependencies = [
     "scrapy>=2.11,<3",
     "scrapy-playwright>=0.0.40",
     "playwright-stealth>=2.0,<3",
     "playwright>=1.45",
     "supabase>=2.7,<3",
-    "beautifulsoup4>=4.12,<5",
-    "tenacity>=8.3,<10",
     "loguru>=0.7,<1",
     "python-dotenv>=1.0,<2",
     "feedparser>=6.0,<7",
     "curl-cffi>=0.7,<1",
     "openai>=1.0,<3",
     "portalocker>=2.8,<4",
+    "python-dateutil>=2.9,<3",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=7",
     "ruff>=0.4",
 ]
 docker = [

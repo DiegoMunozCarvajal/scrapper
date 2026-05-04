@@ -2,7 +2,7 @@ import os
 
 from loguru import logger
 from scrapy.http import HtmlResponse
-from scrapper.stealth_handler import ScrapyPlaywrightStealthDownloadHandler
+from .stealth_handler import ScrapyPlaywrightStealthDownloadHandler
 
 
 class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
