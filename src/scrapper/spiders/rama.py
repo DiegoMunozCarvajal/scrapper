@@ -9,7 +9,6 @@ from ..items import GenericItem
 
 
 async def _wait_for_load(page):
-    """PageMethod: wait for the search page to be ready."""
     await page.wait_for_selector("#searchForm\\:searchButton, [id=\"searchForm:searchButton\"]", timeout=15000)
     return True
 
@@ -17,8 +16,9 @@ async def _wait_for_load(page):
 class RamaSpider(scrapy.Spider):
     """Spider for Rama Judicial - Corte Suprema de Justicia.
 
-    Uses Playwright to fill search form and click search. Extracts data
-    from the PrimeFaces AJAX XML response using page.route() interception.
+    Uses Playwright to fill the search form and navigate results via
+    PrimeFaces paginator button (j_idt217=Next). All pagination happens
+    within a single async parse call.
 
     Usage:
         scrapy crawl rama -a query="derecho fundamental" -a limit=30
@@ -59,94 +59,77 @@ class RamaSpider(scrapy.Spider):
         if not page_obj:
             return
 
-        xml_text = None
+        captured_xml = []
 
-        async def _capture(route):
-            nonlocal xml_text
-            resp = await route.fetch()
+        def _on_response(resp):
             ct = resp.headers.get("content-type", "")
-            if "xml" in ct.lower() and "xhtml" in route.request.url:
+            if "xml" in ct.lower() and "xhtml" in resp.url:
+                captured_xml.append(resp)
+
+        page_obj.on("response", _on_response)
+
+        await page_obj.locator('input[name="searchForm:temaInput"]').fill(query)
+        await page_obj.locator("#searchForm\\:searchButton").click()
+        await page_obj.wait_for_timeout(15000)
+
+        total_yielded = 0
+        seen = set()
+        page_num = 0
+        max_pages = 200
+
+        while total_yielded < limit and page_num < max_pages:
+            xml_text = None
+            next_idx = len(captured_xml) - 1
+            if next_idx >= 0:
                 try:
-                    xml_text = await resp.text()
+                    xml_text = await captured_xml[next_idx].text()
                 except Exception:
                     pass
-            await route.fulfill(response=resp)
 
-        await page_obj.route("**/*", _capture)
+            if not xml_text:
+                self.logger.warning("No XML on page %d, stopping", page_num + 1)
+                break
 
-        total_yielded = response.meta.get("_total_yielded", 0)
-        is_first = "_page" not in response.meta
+            items = self._parse_xml(xml_text)
+            for item_data in items:
+                if total_yielded >= limit:
+                    break
+                uid = item_data.get("url") or item_data.get("title", "")
+                if uid in seen:
+                    continue
+                seen.add(uid)
 
-        if is_first:
-            await page_obj.locator('input[name="searchForm:temaInput"]').fill(query)
-            await page_obj.locator("#searchForm\\:searchButton").click()
-            await page_obj.wait_for_timeout(15000)
-        else:
-            next_page_num = response.meta["_page"] + 2
-            self.logger.info("Clicking page %d (%d items so far)", next_page_num, total_yielded)
-            try:
-                btn = page_obj.locator(f'.ui-paginator-page:has-text("{next_page_num}")').first
-                if await btn.count() == 0:
-                    btn = page_obj.locator(".ui-paginator-next").first
-                await btn.click()
-                await page_obj.wait_for_timeout(10000)
-            except Exception as e:
-                self.logger.warning("Pagination click failed: %s", e)
-                await page_obj.unroute("**/*.xhtml")
-                await page_obj.close()
-                return
+                total_yielded += 1
+                yield GenericItem(
+                    site=self.site,
+                    url=item_data.get("url", ""),
+                    title=item_data.get("title", ""),
+                    content=item_data.get("content", ""),
+                    page_type="jurisprudencia",
+                    metadata={
+                        "strategy": "jsf_xml",
+                        "query": query,
+                        "extras": {k: v for k, v in item_data.items()
+                                   if k not in ("url", "title", "content")},
+                    },
+                )
 
-        await page_obj.unroute("**/*.xhtml")
-
-        if not xml_text:
-            self.logger.warning("No XML captured")
-            await page_obj.close()
-            return
-
-        items = self._parse_xml(xml_text, query)
-        for item_data in items:
             if total_yielded >= limit:
                 break
-            total_yielded += 1
-            yield GenericItem(
-                site=self.site,
-                url=item_data.get("url", ""),
-                title=item_data.get("title", ""),
-                content=item_data.get("content", ""),
-                page_type="jurisprudencia",
-                metadata={
-                    "strategy": "jsf_xml",
-                    "query": query,
-                    "extras": {k: v for k, v in item_data.items() if k not in ("url", "title", "content")},
-                },
-            )
 
-        if total_yielded >= limit:
-            self.logger.info("Reached limit of %d items", limit)
-            await page_obj.close()
-            return
+            page_num += 1
+            self.logger.info("Clicking Next (page %d, %d items)", page_num + 1, total_yielded)
 
-        next_page = response.meta.get("_page", 0) + 1
-        yield Request(
-            url=response.url,
-            callback=self.parse,
-            meta={
-                "playwright": True,
-                "playwright_page": page_obj,
-                "playwright_include_page": True,
-                "query": query,
-                "limit": limit,
-                "_page": next_page,
-                "_total_yielded": total_yielded,
-            },
-            dont_filter=True,
-        )
+            await page_obj.locator("#resultForm\\:j_idt217").click(timeout=5000)
+            await page_obj.wait_for_timeout(10000)
+
+        self.logger.info("Finished: %d items from %d pages", total_yielded, page_num)
+        await page_obj.close()
 
     @staticmethod
-    def _parse_xml(xml_text, query):
+    def _parse_xml(xml_text):
         cdatas = re.findall(r"<!\[CDATA\[(.*?)\]\]>", xml_text, re.DOTALL)
         items = []
-        seen = set()
 
         for cdata in cdatas:
             trs = re.findall(r"<tr[^>]*role=\"row\"[^>]*>(.*?)</tr>", cdata, re.DOTALL)
@@ -158,10 +141,6 @@ class RamaSpider(scrapy.Spider):
 
                 if not text or len(text) < 30 or "ui-button" in text:
                     continue
-
-                if text in seen:
-                    continue
-                seen.add(text)
 
                 item = {"title": "", "url": "", "content": text}
 
@@ -179,14 +158,6 @@ class RamaSpider(scrapy.Spider):
                 if m:
                     item["proceso"] = m.group(1)
 
-                m = re.search(r"CLASE DE ACTUACI[ÓO]N:\s*([^A-Z]+?)(?=[A-Z]{2,})", text)
-                if m:
-                    item["clase"] = m.group(1).strip()
-
-                m = re.search(r"TIPO DE PROVIDENCIA:\s*(\w+)", text)
-                if m:
-                    item["tipo"] = m.group(1)
-
                 m = re.search(r"FECHA:\s*(\d{2}/\d{2}/\d{4})", text)
                 if m:
                     item["fecha"] = m.group(1)
@@ -199,10 +170,6 @@ class RamaSpider(scrapy.Spider):
                 if m:
                     item["tema"] = m.group(1).strip()
                     item["content"] = m.group(1).strip()
-
-                m = re.search(r"SALA\s*(DE\s*)?([A-ZÁÉÍÓÚ\s]+)\s+ID:", text)
-                if m:
-                    item["sala"] = m.group(2).strip()
 
                 if not item["title"]:
                     item["title"] = item.get("providencia") or item.get("id") or text[:80]
