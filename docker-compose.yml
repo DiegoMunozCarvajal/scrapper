@@ -1,33 +1,38 @@
-version: "3.8"
-
 services:
   scrapyd:
-    image: vimagick/scrapyd:latest
+    build: .
+    init: true
     ports:
       - "6800:6800"
+      - "8080:8080"
     volumes:
-      - ./src:/scrapy/src
-      - ./scrapy.cfg:/scrapy/scrapy.cfg
-      - ./scrapyd.conf:/scrapy/scrapyd.conf
-      - scrapyd_data:/scrapy/data
-    environment:
-      REDDIT_QUERY: ${REDDIT_QUERY:-python}
-      REDDIT_LIMIT: ${REDDIT_LIMIT:-10}
-      HOTMART_QUERY: ${HOTMART_QUERY:-marketing}
-      HOTMART_LIMIT: ${HOTMART_LIMIT:-10}
+      - scrapyd_data:/app/data
+      - ./eggs:/app/eggs
+      - ./dbs:/app/dbs
+      - ./metrics:/app/metrics
+      - ./logs:/app/logs
+      - ./items:/app/items
+      - ./queries.json:/app/queries.json
+      - ./llm_cache.db:/app/llm_cache.db
+    env_file:
+      - .env
     restart: unless-stopped
-
-  scrapydweb:
-    image: my8100/scrapydweb:latest
-    ports:
-      - "5000:5000"
-    environment:
-      SCRAPYDWEB_USERNAME: admin
-      SCRAPYDWEB_PASSWORD: ${ADMIN_PASSWORD:-admin}
-      SCRAPYD_SERVERS_0_URL: http://scrapyd:6800
-    depends_on:
-      - scrapyd
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6800/daemonstatus.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   scrapyd_data:

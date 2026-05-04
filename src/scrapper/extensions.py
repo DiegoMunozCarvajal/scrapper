@@ -1,7 +1,9 @@
 """Scrapy extensions for monitoring and alerting."""
 
+import os
 import portalocker
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -163,14 +165,16 @@ class EmailAlerter:
         self.metrics_dir = metrics_dir
         self.error_threshold = error_threshold
         self.error_count = 0
+        self._error_lock = threading.Lock()
 
     @classmethod
     def from_crawler(cls, crawler):
+        password = os.getenv("ALERT_EMAIL_PASSWORD", "")
         ext = cls(
             smtp_host=crawler.settings.get("ALERT_SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(crawler.settings.get("ALERT_SMTP_PORT", 587)),
             from_addr=crawler.settings.get("ALERT_EMAIL_FROM", ""),
-            password=crawler.settings.get("_ALERT_EMAIL_PASSWORD", ""),
+            password=password,
             to_addr=crawler.settings.get("ALERT_EMAIL_TO", ""),
             metrics_dir=crawler.settings.get("METRICS_DIR", "metrics"),
             error_threshold=int(crawler.settings.get("ALERT_ERROR_THRESHOLD", 5)),
@@ -180,7 +184,8 @@ class EmailAlerter:
         return ext
 
     def spider_error(self, failure, response, spider):
-        self.error_count += 1
+        with self._error_lock:
+            self.error_count += 1
 
     def spider_closed(self, spider, reason):
         alerts = []

@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS posts (
     score         INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     published_at  TIMESTAMPTZ,
+    quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
     scrape_job_id INTEGER REFERENCES scrape_jobs(id),
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS products (
     review_count  INTEGER DEFAULT 0,
     seller        TEXT,
     availability  TEXT,
+    quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
     scrape_job_id INTEGER REFERENCES scrape_jobs(id),
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
@@ -82,12 +84,43 @@ ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scrape_jobs ENABLE ROW LEVEL SECURITY;
 
 -- Public read access (anyone with project URL can read)
-CREATE POLICY "Public can read posts" ON posts FOR SELECT USING (true);
-CREATE POLICY "Public can read products" ON products FOR SELECT USING (true);
-CREATE POLICY "Public can read sites" ON sites FOR SELECT USING (true);
+DO $$ BEGIN
+    CREATE POLICY "Public can read posts" ON posts FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Public can read products" ON products FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Public can read sites" ON sites FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Service role full access (for scraping pipeline)
-CREATE POLICY "Service can do anything with posts" ON posts FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Service can do anything with products" ON products FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Service can do anything with sites" ON sites FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL USING (true) WITH CHECK (true);
+DO $$ BEGIN
+    CREATE POLICY "Service can do anything with posts" ON posts FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Service can do anything with products" ON products FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Service can do anything with sites" ON sites FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ── Migrations (idempotent) ─────────────────────
+-- Add quality_issues column if missing (v0.4+)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';

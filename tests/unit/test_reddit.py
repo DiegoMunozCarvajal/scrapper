@@ -94,7 +94,7 @@ class TestRedditSpider:
         spider = self._make_spider()
         url = "https://old.reddit.com/r/Python/comments/abc123/test_post/"
         response = self._make_response(
-            body="<html><body><div class='md'><p>Post body content here.</p></div></body></html>",
+            body="<html><body><a class='title'>Test Title</a><div class='md'><p>Post body content here.</p></div></body></html>",
             url=url,
         )
         result = list(spider.parse_post_page(response))
@@ -106,7 +106,7 @@ class TestRedditSpider:
     def test_parse_post_page_no_content(self):
         spider = self._make_spider()
         url = "https://old.reddit.com/r/Python/comments/abc123/test_post/"
-        response = self._make_response(body="<html><body></body></html>", url=url)
+        response = self._make_response(body="<html><body><a class='title'>Test Title</a></body></html>", url=url)
         result = list(spider.parse_post_page(response))
         assert len(result) == 1
         item = result[0]

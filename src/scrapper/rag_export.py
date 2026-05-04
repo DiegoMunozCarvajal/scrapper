@@ -8,6 +8,16 @@ from .items import PostItem
 from .utils import slugify
 
 
+def _yaml_value(val) -> str:
+    if isinstance(val, bool) or isinstance(val, (int, float)) or val is None:
+        return str(val)
+    s = str(val)
+    if any(c in s for c in ':{}[]&*?|><#%"\'@`!\n') or s.startswith(" ") or s.endswith(" "):
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return s
+
+
 class MarkdownExportPipeline:
     """Convert each scraped item to a Markdown file with YAML frontmatter."""
 
@@ -15,7 +25,7 @@ class MarkdownExportPipeline:
         self.output_dir = Path(output_dir)
         self._collision_counters: dict[str, int] = {}
 
-    def open_spider(self, spider):
+    def open_spider(self):
         posts_dir = self.output_dir / "posts"
         products_dir = self.output_dir / "products"
         posts_dir.mkdir(parents=True, exist_ok=True)
@@ -23,10 +33,10 @@ class MarkdownExportPipeline:
         self._collision_counters = {}
         logger.info(f"Markdown export dirs ready: {self.output_dir}")
 
-    def close_spider(self, spider):
+    def close_spider(self):
         self._collision_counters = {}
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         is_post = isinstance(item, PostItem)
         site = item.get("site", "unknown")
         source_type = "social_media" if is_post else "product_listing"
@@ -70,10 +80,7 @@ class MarkdownExportPipeline:
             val = data.get(key)
             if val is None:
                 continue
-            if isinstance(val, str) and _needs_quoting(val):
-                lines.append(f'{key}: "{val}"')
-            else:
-                lines.append(f"{key}: {val}")
+            lines.append(f"{key}: {_yaml_value(val)}")
         return "\n".join(lines) + "\n"
 
 
@@ -84,16 +91,16 @@ class ChunkedJSONPipeline:
         self.output_dir = Path(output_dir)
         self._file = None
 
-    def open_spider(self, spider):
+    def open_spider(self):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"JSONL export ready: {self.output_dir}")
 
-    def close_spider(self, spider):
+    def close_spider(self):
         if self._file:
             self._file.close()
             self._file = None
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         chunk = self._build_chunk(item)
         try:
             if self._file is None:
@@ -127,7 +134,3 @@ class ChunkedJSONPipeline:
             "text": text,
             "metadata": metadata,
         }
-
-
-def _needs_quoting(val: str) -> bool:
-    return any(c in val for c in ':{}[]&*?|><#%"\'@`!\n') or val.startswith(" ") or val.endswith(" ")

@@ -1,59 +1,106 @@
 # scrapper
 
-Multi-site web scraper for Reddit, Quora, Hotmart, Mercado Libre, Amazon, and Instagram.
+Multi-site web scraper built on **Scrapy + Playwright + curl-cffi + OpenAI + Supabase**.
 
-## Setup
+Active spiders: Reddit, Hotmart. Deprecated: Amazon, Mercado Libre, Quora.
+
+## Quick Start
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 playwright install chromium
 ```
 
 ## Usage
 
+All spiders run via Scrapy CLI:
+
 ```bash
-python -m src.scrapper.main <site> <query> [--limit N] [--output results.json]
+# Reddit (active)
+scrapy crawl reddit -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 
-# Examples
-python -m src.scrapper.main amazon "mechanical keyboard" --limit 20 -o amazon.json
-python -m src.scrapper.main reddit "python tips" -n 15
-python -m src.scrapper.main mercadolibre "laptop gamer" --no-headless
+# Hotmart (active)
+scrapy crawl hotmart -a query="marketing" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 ```
 
-### Supported sites
+### Debugging & feature flags
 
-| Site | Key | Type |
-|------|-----|------|
-| Amazon | `amazon` | Products |
-| Mercado Libre | `mercadolibre` | Products |
-| Hotmart | `hotmart` | Products |
-| Reddit | `reddit` | Posts |
-| Quora | `quora` | Posts |
-| Instagram | `instagram` | Posts |
+```bash
+# Visible browser
+HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
 
-### Options
+# Disable human simulation (faster, more detectable)
+PLAYWRIGHT_HUMAN_SIMULATION=false scrapy crawl reddit -a query="python" -a limit=5
 
-| Flag | Description |
-|------|-------------|
-| `--limit, -n` | Max results (default: 10) |
-| `--output, -o` | Save results to JSON file |
-| `--no-headless` | Show browser window |
-| `--proxy` | Proxy URL (e.g. `http://user:pass@host:port`) |
+# Disable curl-cffi TLS impersonation
+CURL_CFFI_ENABLED=false scrapy crawl reddit -a query="python" -a limit=5
 
-## Programmatic usage
+# Disable LLM fallback extraction
+LLM_ENABLED=false scrapy crawl hotmart -a query="python" -a limit=5
 
-```python
-from scrapper.scrapers import AmazonScraper
-
-scraper = AmazonScraper(headless=True)
-result = scraper.run_sync("laptop", limit=5)
-
-for product in result.products:
-    print(product.title, product.price)
+# List all spiders
+scrapy list
 ```
+
+## Spider Status
+
+| Spider | Status | Strategy | Notes |
+|--------|--------|----------|-------|
+| Reddit | Active | RSS → HTML fallback → LLM | old.reddit.com, incremental via Supabase cutoff |
+| Hotmart | Active | API interception → Playwright DOM → LLM | PageMethod API discovery, pagination |
+| Amazon | Deprecated | — | Requires residential proxies |
+| MercadoLibre | Deprecated | — | Requires residential proxies |
+| Quora | Deprecated | — | Cloudflare + login required |
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SUPABASE_URL` | — | Supabase project URL |
+| `SUPABASE_KEY` | — | Supabase service role key |
+| `OPENAI_API_KEY` | — | OpenAI API key for LLM fallback |
+| `PROXY_LIST` | — | Comma-separated proxy URLs |
+| `ALERT_WEBHOOK_URL` | — | Discord/Slack webhook for alerts |
+| `HEADLESS` | `true` | Run Playwright headless |
+| `PLAYWRIGHT_HUMAN_SIMULATION` | `true` | Scroll/delay + canvas/WebGL spoofing |
+| `LLM_ENABLED` | `true` | Enable LLM extraction fallback |
+| `LLM_MODEL` | `gpt-4o-mini` | OpenAI model for extraction |
+| `LLM_CACHE_TTL` | `86400` | LLM cache TTL in seconds |
+| `CURL_CFFI_ENABLED` | `true` | Use curl-cffi TLS impersonation |
+| `CURL_CFFI_IMPERSONATE` | `chrome124` | Browser fingerprint to mimic |
+| `COOKIE_PERSIST_ENABLED` | `true` | Persist cookies between runs |
+
+## Architecture
+
+**Stack**: Scrapy + scrapy-playwright + playwright-stealth v2 + curl-cffi + OpenAI + Supabase + portalocker + loguru
+
+- **Triple strategy extraction**: Primary (RSS/API) → Fallback (DOM/Playwright) → LLM (OpenAI)
+- **Anti-bot**: TLS impersonation (curl-cffi), canvas/WebGL spoofing, cookie persistence, human simulation
+- **Pipelines**: Validate → DataQuality → Dedup → Supabase upsert (3 retries) → RAG export (Markdown + JSONL)
+- **Monitoring**: StatsLogger (JSON metrics), EmailAlerter (anomaly detection), HTML dashboard
+
+## Docker + Scrapyd
+
+```bash
+docker-compose up -d
+```
+
+Scheduled jobs via `scrapyd.conf`:
+- Reddit: every 6 hours
+- Hotmart: 8 AM and 8 PM daily
+
+Health monitoring: `./bin/health-check.sh`
 
 ## Tests
 
 ```bash
+# All tests
 pytest tests/ -v
+
+# Coverage
+pytest tests/ --cov=src/scrapper --cov-report=term-missing
+
+# Lint
+ruff check src/ tests/
 ```

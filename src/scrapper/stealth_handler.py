@@ -56,7 +56,28 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                     )
                 except Exception as e:
                     logger.warning(f"Failed to save cookies for context '{name}': {e}")
-            context.on("close", lambda ctx: asyncio.ensure_future(save_on_close(ctx)))
+
+            def _schedule_cookie_save(ctx):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    logger.warning(
+                        f"Cannot schedule cookie save for '{name}': no running event loop"
+                    )
+                    return
+                try:
+                    task = loop.create_task(save_on_close(ctx))
+                except RuntimeError:
+                    logger.warning(
+                        f"Cannot schedule cookie save for '{name}': event loop closed"
+                    )
+                    return
+                task.add_done_callback(
+                    lambda t: logger.warning(
+                        f"Cookie save for context '{name}' failed: {t.exception()}"
+                    ) if t.exception() else None
+                )
+            context.on("close", _schedule_cookie_save)
 
         config = StealthConfig()
         await config.apply_stealth_async(context)

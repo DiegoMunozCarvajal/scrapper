@@ -13,28 +13,37 @@ class DataQualityPipeline:
 
     def __init__(self):
         self._stats = defaultdict(lambda: {"total": 0, "issues": 0})
+        self._crawler = None
 
-    def process_item(self, item, spider):
+    @classmethod
+    def from_crawler(cls, crawler):
+        pipe = cls()
+        pipe._crawler = crawler
+        return pipe
+
+    def process_item(self, item):
         issues = self._validate(item)
-        self._stats[spider.name]["total"] += 1
+        spider_name = self._crawler.spider.name
+        self._stats[spider_name]["total"] += 1
         if issues:
-            self._stats[spider.name]["issues"] += 1
+            self._stats[spider_name]["issues"] += 1
             existing = item.get("quality_issues") or []
             item["quality_issues"] = existing + issues
         return item
 
-    def close_spider(self, spider):
-        stats = self._stats.get(spider.name, {"total": 0, "issues": 0})
+    def close_spider(self):
+        spider_name = self._crawler.spider.name
+        stats = self._stats.get(spider_name, {"total": 0, "issues": 0})
         if stats["total"] > 0:
             pct = stats["issues"] / stats["total"] * 100
             if pct > 30:
                 logger.warning(
-                    f"[{spider.name}] Data quality: {stats['issues']}/{stats['total']} "
+                    f"[{spider_name}] Data quality: {stats['issues']}/{stats['total']} "
                     f"items with issues ({pct:.1f}%)"
                 )
             else:
                 logger.info(
-                    f"[{spider.name}] Data quality: {stats['issues']}/{stats['total']} "
+                    f"[{spider_name}] Data quality: {stats['issues']}/{stats['total']} "
                     f"items with issues ({pct:.1f}%)"
                 )
 
@@ -89,13 +98,23 @@ class DataQualityPipeline:
 class ValidatePipeline:
     """Drop items missing URL or title."""
 
-    def process_item(self, item, spider):
+    def __init__(self):
+        self._crawler = None
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        pipe = cls()
+        pipe._crawler = crawler
+        return pipe
+
+    def process_item(self, item):
+        spider_name = self._crawler.spider.name
         url = item.get("url")
         if not url:
-            raise DropItem(f"Missing URL in item from {spider.name}")
+            raise DropItem(f"Missing URL in item from {spider_name}")
         title = item.get("title")
         if not title:
-            raise DropItem(f"Missing title in item from {spider.name}: {url}")
+            raise DropItem(f"Missing title in item from {spider_name}: {url}")
         return item
 
 
@@ -105,7 +124,7 @@ class DedupInMemoryPipeline:
     def __init__(self):
         self.seen: set[str] = set()
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         url = item.get("url", "")
         if url in self.seen:
             raise DropItem(f"Duplicate URL in run: {url}")
@@ -126,7 +145,7 @@ class SupabasePipeline:
             supabase_key=crawler.settings.get("SUPABASE_KEY", ""),
         )
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         table = "posts" if isinstance(item, PostItem) else "products"
         data = dict(item)
         for attempt in range(1, 4):
@@ -134,18 +153,17 @@ class SupabasePipeline:
                 self.client.table(table).upsert(data, on_conflict="site,url").execute()
                 break
             except Exception as e:
-                spider.logger.warning(
+                logger.warning(
                     f"Supabase upsert attempt {attempt}/3 failed for {item.get('url')}: {e}"
                 )
                 if attempt == 3:
-                    spider.logger.error(
+                    logger.error(
                         f"Supabase upsert FAILED after 3 retries for {item.get('url')}"
                     )
-                    from scrapy.exceptions import DropItem
                     raise DropItem(f"Supabase upsert failed after 3 attempts: {item.get('url')}")
         return item
 
-    def close_spider(self, spider):
+    def close_spider(self):
         try:
             self.client.postgrest.session.aclose()
         except Exception:

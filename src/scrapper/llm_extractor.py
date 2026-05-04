@@ -1,11 +1,22 @@
 import hashlib
 import json
 import os
+import re
 
 from loguru import logger
 from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 
 from .llm_cache import LLMCache
+
+
+_NONCE_PATTERNS = re.compile(
+    r'(csrf|nonce|token|timestamp|_t)"?\s*[=:]\s*"?[^"&\s,}]+"?',
+    re.IGNORECASE,
+)
+
+
+def _strip_dynamic_html(html: str) -> str:
+    return _NONCE_PATTERNS.sub("", html)
 
 
 class LLMExtractor:
@@ -50,6 +61,9 @@ class LLMExtractor:
                 logger.warning("LLM returned invalid response: %s", e)
                 continue
 
+        if not all_results:
+            logger.warning("LLM extraction returned no results for %s:%s", site, query)
+
         validated = self._validate_items(all_results, item_class)
         if validated:
             self.cache.set(cache_key, validated)
@@ -59,12 +73,23 @@ class LLMExtractor:
         if len(html) <= max_chars:
             return [html]
         chunks = []
-        for i in range(0, len(html), max_chars):
-            chunks.append(html[i : i + max_chars])
+        pos = 0
+        while pos < len(html):
+            end = pos + max_chars
+            if end >= len(html):
+                chunks.append(html[pos:])
+                break
+            last_gt = html.rfind(">", pos, end)
+            if last_gt > pos:
+                chunks.append(html[pos:last_gt + 1])
+                pos = last_gt + 1
+            else:
+                chunks.append(html[pos:end])
+                pos = end
         return chunks
 
     def _cache_key(self, site, query, html):
-        prefix = html[:2000] if len(html) > 2000 else html
+        prefix = _strip_dynamic_html(html[:4000] if len(html) > 4000 else html)
         raw = f"{site}:{query}:{prefix}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -95,9 +120,10 @@ def llm_fallback(spider, response, item_class):
 
     query = response.meta["query"]
     limit = int(response.meta.get("limit", 10))
-    extractor = LLMExtractor()
+    extractor = None
 
     try:
+        extractor = LLMExtractor()
         site = getattr(spider, "site", "unknown")
 
         items = extractor.extract(
@@ -115,4 +141,5 @@ def llm_fallback(spider, response, item_class):
             item_data.setdefault("site", site)
             yield item_class(item_data)
     finally:
-        extractor.cache.close()
+        if extractor is not None:
+            extractor.cache.close()

@@ -26,7 +26,6 @@ class RedditSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cutoff_date = None
-        self._load_cutoff_date()
 
     def _load_cutoff_date(self):
         supabase_url = self.settings.get("SUPABASE_URL")
@@ -59,9 +58,23 @@ class RedditSpider(scrapy.Spider):
                         pass
 
     def start_requests(self):
+        """Deprecated: kept for Scrapy <2.13 compatibility. Use start() instead."""
+        self._load_cutoff_date()
         query = getattr(self, "query", "python")
         limit = int(getattr(self, "limit", 10))
-        rss_url = f"https://www.reddit.com/search.rss?q={quote_plus(query)}&sort=relevance&limit={limit}"
+        rss_url = f"https://www.reddit.com/search.rss?q={quote_plus(query)}&sort=new&limit={limit}"
+        yield scrapy.Request(
+            rss_url,
+            callback=self.parse_rss,
+            meta={"query": query, "limit": limit},
+            errback=self._fallback_to_search,
+        )
+
+    async def start(self):
+        self._load_cutoff_date()
+        query = getattr(self, "query", "python")
+        limit = int(getattr(self, "limit", 10))
+        rss_url = f"https://www.reddit.com/search.rss?q={quote_plus(query)}&sort=new&limit={limit}"
         yield scrapy.Request(
             rss_url,
             callback=self.parse_rss,
@@ -72,7 +85,7 @@ class RedditSpider(scrapy.Spider):
     def _fallback_to_search(self, failure):
         query = failure.request.meta["query"]
         limit = failure.request.meta["limit"]
-        url = f"https://old.reddit.com/search?q={quote_plus(query)}&sort=relevance&type=link"
+        url = f"https://old.reddit.com/search?q={quote_plus(query)}&sort=new&type=link"
         yield scrapy.Request(url, meta={"query": query, "limit": limit, "count": 0})
 
     def parse_rss(self, response):
@@ -88,7 +101,7 @@ class RedditSpider(scrapy.Spider):
                 return
 
             title = entry.get("title", "")
-            url = entry.get("link", "")
+            url = entry.get("link", "").replace("www.reddit.com", "old.reddit.com")
             published = entry.get("updated", "") or entry.get("published", "")
 
             if not title or not url:
@@ -179,7 +192,9 @@ class RedditSpider(scrapy.Spider):
             top_comment = "".join(first_comment.css("*::text").getall()).strip()
 
         post_url = response.url
-        if not post_url.startswith("http"):
+        if post_url.startswith("//"):
+            post_url = f"https:{post_url}"
+        elif not post_url.startswith("http"):
             post_url = f"https://old.reddit.com{post_url}"
 
         score_text = response.css("div.score.unvoted::text").get("")

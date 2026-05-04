@@ -23,7 +23,7 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
             return super()._download_request(request, spider)
 
         impersonate = os.getenv("CURL_CFFI_IMPERSONATE", self.IMPERSONATE_FALLBACK)
-        from twisted.internet.threads import blockingCallFromThread, deferToThread
+        from twisted.internet.threads import deferToThread
 
         def _do_request():
             try:
@@ -42,12 +42,8 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
                 )
             except Exception as e:
                 spider.logger.warning(
-                    f"curl_cffi request failed: {e}, falling back to parent handler"
+                    f"curl_cffi request failed: {e}, letting Scrapy retry"
                 )
-                return blockingCallFromThread(
-                    super(CurlCffiDownloadHandler, self)._download_request,
-                    request,
-                    spider,
-                )
+                raise
 
         return deferToThread(_do_request)

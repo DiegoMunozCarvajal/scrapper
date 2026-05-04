@@ -1,4 +1,6 @@
 import re
+from urllib.parse import quote_plus
+
 import scrapy
 from ..items import ProductItem
 
@@ -24,7 +26,7 @@ class MercadoLibreSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "laptop")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://api.mercadolibre.com/sites/MCO/search?q={query}&limit={limit}"
+        url = f"https://api.mercadolibre.com/sites/MCO/search?q={quote_plus(query)}&limit={limit}"
         yield scrapy.Request(url, meta={"query": query, "limit": limit})
 
     def parse(self, response):

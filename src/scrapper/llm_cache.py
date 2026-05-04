@@ -26,6 +26,8 @@ class LLMCache:
         """Retrieve a cached value by key, returning None if missing or expired."""
         expiry = (datetime.now(timezone.utc) - timedelta(seconds=self.ttl)).isoformat()
         with self._lock:
+            if self.db is None:
+                return None
             row = self.db.execute(
                 "SELECT result FROM cache WHERE key = ? AND created_at > ?",
                 (key, expiry),
@@ -35,6 +37,8 @@ class LLMCache:
     def set(self, key, value):
         """Store a value under the given key, overwriting any existing entry."""
         with self._lock:
+            if self.db is None:
+                return
             self.db.execute(
                 "INSERT OR REPLACE INTO cache (key, result, created_at) VALUES (?, ?, ?)",
                 (key, json.dumps(value), datetime.now(timezone.utc).isoformat()),
@@ -44,8 +48,9 @@ class LLMCache:
     def close(self):
         """Close the underlying database connection."""
         with self._lock:
-            self.db.close()
-            self.db = None
+            if self.db is not None:
+                self.db.close()
+                self.db = None
 
     def __enter__(self):
         return self

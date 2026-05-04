@@ -1,4 +1,6 @@
 import re
+from urllib.parse import quote_plus
+
 import scrapy
 from ..items import ProductItem
 
@@ -27,7 +29,7 @@ class AmazonSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "laptop")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://www.amazon.com/s?k={query}"
+        url = f"https://www.amazon.com/s?k={quote_plus(query)}"
         yield scrapy.Request(
             url,
             meta={"playwright": True, "query": query, "limit": limit, "count": 0},

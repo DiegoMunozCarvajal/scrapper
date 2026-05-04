@@ -2,6 +2,7 @@
 
 import random
 
+from loguru import logger
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
 
 from .utils import USER_AGENTS
@@ -15,7 +16,7 @@ class RetryWithBackoffMiddleware(RetryMiddleware):
         delay = min(2 ** (retries - 1), 16)
         request.meta["retry_times"] = retries
         request.meta["download_latency"] = delay
-        spider.logger.info(
+        logger.info(
             f"Retrying {request.url} (attempt {retries}) after {delay}s delay"
         )
         return super()._retry(request, reason, spider)
@@ -31,7 +32,7 @@ class ProxyRotationMiddleware:
     def from_crawler(cls, crawler):
         return cls(proxy_list=crawler.settings.get("PROXY_LIST", ""))
 
-    def process_request(self, request, spider):
+    def process_request(self, request):
         if not self.proxies:
             return None
         proxy = random.choice(self.proxies)
@@ -42,7 +43,7 @@ class ProxyRotationMiddleware:
         else:
             request.meta["proxy"] = proxy
 
-        spider.logger.debug(
+        logger.debug(
             f"Using proxy: {proxy.split('@')[-1] if '@' in proxy else proxy}"
         )
         return None
@@ -51,7 +52,7 @@ class ProxyRotationMiddleware:
 class UARotationMiddleware:
     """Rotate user agent on each request."""
 
-    def process_request(self, request, spider):
+    def process_request(self, request):
         ua = random.choice(USER_AGENTS)
         request.headers["User-Agent"] = ua
 

@@ -31,6 +31,36 @@ class HotmartSpider(scrapy.Spider):
         self._api_headers_cache = getattr(self, "_api_headers_cache", None)
 
     def start_requests(self):
+        """Deprecated: kept for Scrapy <2.13 compatibility. Use start() instead."""
+        query = getattr(self, "query", "marketing")
+        limit = int(getattr(self, "limit", 10))
+        url = f"https://hotmart.com/en/marketplace/search?q={quote_plus(query)}"
+
+        if self._api_endpoint_cache:
+            page = 1
+            api_url = self._api_endpoint_cache + f"?q={quote_plus(query)}&page={page}&size={limit}"
+            yield Request(
+                api_url,
+                callback=self.parse_api,
+                meta={"query": query, "limit": limit, "page": page, "strategy": "api"},
+                headers=self._api_headers_cache or {},
+                errback=lambda f: self._fallback_to_playwright(f, query, limit),
+            )
+        else:
+            yield Request(
+                url,
+                callback=self.discover_api_callback,
+                meta={
+                    "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod(_intercept_api_calls, query),
+                    ],
+                    "query": query,
+                    "limit": limit,
+                },
+            )
+
+    async def start(self):
         query = getattr(self, "query", "marketing")
         limit = int(getattr(self, "limit", 10))
         url = f"https://hotmart.com/en/marketplace/search?q={quote_plus(query)}"
@@ -128,6 +158,10 @@ class HotmartSpider(scrapy.Spider):
             count += 1
             product["metadata"]["query"] = query
             yield ProductItem(product)
+
+        if not products:
+            self.logger.info("API returned empty products list, stopping pagination")
+            return
 
         if count < limit:
             pagination = data.get("data", {}).get("search", {}).get("pagination", {})

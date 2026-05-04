@@ -1,4 +1,5 @@
 import random
+import re
 from pathlib import Path
 
 USER_AGENTS = [
@@ -31,7 +32,9 @@ def ensure_dir(path: str | Path) -> Path:
 
 
 def slugify(text: str) -> str:
-    return "".join(c if c.isalnum() else "_" for c in text).strip("_")
+    slug = "".join(c if c.isalnum() else "_" for c in text)
+    slug = re.sub(r"__+", "_", slug)
+    return slug.strip("_")
 
 
 class FakeFailure:

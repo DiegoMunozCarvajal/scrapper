@@ -1,3 +1,5 @@
+from urllib.parse import quote_plus
+
 import scrapy
 from ..items import PostItem
 
@@ -23,7 +25,7 @@ class QuoraSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "python")
         limit = int(getattr(self, "limit", 10))
-        url = f"https://www.quora.com/search?q={query}&type=question"
+        url = f"https://www.quora.com/search?q={quote_plus(query)}&type=question"
         yield scrapy.Request(
             url,
             meta={"playwright": True, "playwright_include_page": True, "query": query, "limit": limit},
