@@ -37,6 +37,7 @@ ruff check src/ tests/
 scrapy crawl reddit -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl hotmart -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl generic -a url="https://books.toscrape.com" -a type="listing" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
+scrapy crawl corte -a query="libertad de expresion" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
 
 # Run with visible browser (debugging)
 HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
@@ -98,6 +99,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | Reddit | ✅ Works | RSS → HTML fallback → LLM | old.reddit.com, incremental scraping, score/comments/published_at |
 | Hotmart | ✅ Works | API → Playwright fallback → LLM | Playwright for API discovery via PageMethod, price/review extraction, pagination |
 | Generic | ✅ Works | curl-cffi → Playwright → LLM + pagination | 10 page types + pagination (links/load-more/scroll), type-hinted prompts |
+| Corte Constitucional | ✅ Works | Playwright → Google CSE DOM | Jurisprudence search via /buscador?q=, pagination, visible browser required |
 | Amazon | ⛔ Deprecated | — | Needs residential proxies |
 | MercadoLibre | ⛔ Deprecated | — | Needs residential proxies |
 | Quora | ⛔ Deprecated | — | Cloudflare + login + residential proxies required |
