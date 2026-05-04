@@ -8,7 +8,10 @@ from .stealth_handler import ScrapyPlaywrightStealthDownloadHandler
 class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
     IMPERSONATE_FALLBACK = "chrome124"
 
-    def _download_request(self, request, spider):
+    def _download_request(self, request, spider=None):
+        if spider is None:
+            spider = self._crawler.spider
+
         if request.meta.get("playwright"):
             return super()._download_request(request, spider)
 

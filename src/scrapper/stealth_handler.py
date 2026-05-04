@@ -7,7 +7,7 @@ from typing import Optional
 
 from loguru import logger
 from playwright.async_api import BrowserContext, Page
-from playwright_stealth import StealthConfig
+from playwright_stealth import StealthConfig, stealth_async
 from scrapy import Request
 from scrapy.http import HtmlResponse
 from scrapy_playwright.handler import ScrapyPlaywrightDownloadHandler
@@ -20,11 +20,12 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
         self,
         name: str,
         context_kwargs: Optional[dict] = None,
+        spider=None,
     ) -> BrowserContext:
         context_kwargs = context_kwargs or {}
 
         if "proxy" not in context_kwargs:
-            env_proxy = self.settings.get("PROXY_LIST", "")
+            env_proxy = self._crawler.settings.get("PROXY_LIST", "")
             if env_proxy:
                 proxies = [p.strip() for p in env_proxy.split(",") if p.strip()]
                 if proxies:
@@ -77,14 +78,13 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                         f"Cookie save for context '{name}' failed: {t.exception()}"
                     ) if t.exception() else None
                 )
-            context.on("close", _schedule_cookie_save)
-
-        config = StealthConfig()
-        await config.apply_stealth_async(context)
+            context.context.on("close", _schedule_cookie_save)
 
         return context
 
-    async def _download_request(self, request: Request, spider) -> HtmlResponse:
+    async def _download_request(self, request: Request, spider=None) -> HtmlResponse:
+        if spider is None:
+            spider = self._crawler.spider
         response = await super()._download_request(request, spider)
 
         if not request.meta.get("playwright"):
@@ -93,6 +93,11 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
         page: Page = request.meta.get("playwright_page")
         if not page:
             return response
+
+        try:
+            await stealth_async(page, StealthConfig())
+        except Exception as e:
+            logger.warning(f"Stealth async failed for {request.url}: {e}")
 
         human_simulation = os.getenv("PLAYWRIGHT_HUMAN_SIMULATION", "true").lower() in (
             "true", "1", "yes",
