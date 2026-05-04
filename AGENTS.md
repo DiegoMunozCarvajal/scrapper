@@ -38,6 +38,7 @@ scrapy crawl reddit -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o resu
 scrapy crawl hotmart -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl generic -a url="https://books.toscrape.com" -a type="listing" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl corte -a query="libertad de expresion" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
+scrapy crawl rama -a query="sucesion" -a limit=10 -a download=1 -a download_dir=./providencias -s ROBOTSTXT_OBEY=False -o results.json
 
 # Run with visible browser (debugging)
 HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
@@ -70,7 +71,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 
 **Scrapy + scrapy-playwright + playwright-stealth v2 + curl-cffi + OpenAI + Supabase + portalocker + loguru**
 
-- `src/scrapper/spiders/` — Scrapy spiders (reddit, hotmart, generic + deprecated: amazon, mercadolibre, quora)
+- `src/scrapper/spiders/` — Scrapy spiders (reddit, hotmart, generic, corte, rama + deprecated: amazon, mercadolibre, quora)
 - `src/scrapper/spiders/reddit.py` — Triple strategy: RSS discovery → old.reddit.com HTML fallback → LLM extraction. Extracts score, comment_count, published_at, top comment. Incremental scraping via Supabase cutoff date.
 - `src/scrapper/spiders/hotmart.py` — Triple strategy: internal API interception (via scrapy-playwright PageMethod) → Playwright DOM fallback → LLM extraction. Extracts price, rating, review_count. Handles pagination via PageMethod load-more clicking.
 - `src/scrapper/spiders/generic.py` — Universal spider: curl-cffi → Playwright fallback → LLM extraction with type-hinted prompts. Supports listing, article, product, forum page types.
@@ -100,7 +101,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | Hotmart | ✅ Works | API → Playwright fallback → LLM | Playwright for API discovery via PageMethod, price/review extraction, pagination |
 | Generic | ✅ Works | curl-cffi → Playwright → LLM + pagination | 10 page types + pagination (links/load-more/scroll), type-hinted prompts |
 | Corte Constitucional | ✅ Works | Playwright → Google CSE DOM | Jurisprudence search via /buscador?q=, pagination, visible browser required |
-| Rama Judicial | ✅ Works | Playwright → PrimeFaces JSF XML | CSJ search via POST+ViewState, XML interception, virtual pagination |
+| Rama Judicial | ✅ Works | Playwright → PrimeFaces JSF XML | CSJ search via POST+ViewState, XML interception, virtual pagination, download support |
 | Amazon | ⛔ Deprecated | — | Needs residential proxies |
 | MercadoLibre | ⛔ Deprecated | — | Needs residential proxies |
 | Quora | ⛔ Deprecated | — | Cloudflare + login + residential proxies required |
@@ -136,7 +137,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 
 ## Testing
 
-- 195 tests passing (items, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic)
+- 228 tests passing (items, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
 - 73% coverage (core modules at 80-100%, spiders need Playwright for full coverage)
 - Integration tests use fixture files (XML/JSON/HTML) for deterministic offline testing
 - `asyncio_mode = "auto"` in pyproject.toml
