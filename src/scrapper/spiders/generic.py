@@ -73,24 +73,29 @@ class GenericSpider(scrapy.Spider):
         task_type = getattr(self, "type", None)
         limit = int(getattr(self, "limit", "10"))
         max_pages = int(getattr(self, "max_pages", str(self.MAX_PAGES)))
+        force_playwright = getattr(self, "playwright", None)
 
         if not task_url:
-            self.logger.error("No URL provided. Use: -a url=https://... [-a type=product|article|forum|listing|job|event|recipe|documentation|profile] [-a limit=20] [-a max_pages=5]")
+            self.logger.error("No URL provided. Use: -a url=https://... [-a type=product|article|forum|listing|job|event|recipe|documentation|profile] [-a limit=20] [-a max_pages=5] [-a playwright=1]")
             return
 
         domain = urlparse(task_url).netloc
+        meta = {
+            "task_type": task_type or None,
+            "site": domain,
+            "task_url": task_url,
+            "limit": limit,
+            "max_pages": max_pages,
+            "_page_depth": 0,
+        }
+        if force_playwright and force_playwright not in ("0", "false", "no"):
+            meta["playwright"] = True
+
         yield scrapy.Request(
             url=task_url,
             callback=self.parse,
             errback=self._handle_error,
-            meta={
-                "task_type": task_type or None,
-                "site": domain,
-                "task_url": task_url,
-                "limit": limit,
-                "max_pages": max_pages,
-                "_page_depth": 0,
-            },
+            meta=meta,
         )
 
     def parse(self, response):
