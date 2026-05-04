@@ -36,6 +36,7 @@ ruff check src/ tests/
 # Run a Scrapy spider
 scrapy crawl reddit -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl hotmart -a query="python" -a limit=5 -s ROBOTSTXT_OBEY=False -o results.json
+scrapy crawl generic -a url="https://books.toscrape.com" -a type="listing" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
 
 # Run with visible browser (debugging)
 HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
@@ -68,17 +69,18 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 
 **Scrapy + scrapy-playwright + playwright-stealth v2 + curl-cffi + OpenAI + Supabase + portalocker + loguru**
 
-- `src/scrapper/spiders/` — Scrapy spiders (reddit, hotmart + deprecated: amazon, mercadolibre, quora)
+- `src/scrapper/spiders/` — Scrapy spiders (reddit, hotmart, generic + deprecated: amazon, mercadolibre, quora)
 - `src/scrapper/spiders/reddit.py` — Triple strategy: RSS discovery → old.reddit.com HTML fallback → LLM extraction. Extracts score, comment_count, published_at, top comment. Incremental scraping via Supabase cutoff date.
 - `src/scrapper/spiders/hotmart.py` — Triple strategy: internal API interception (via scrapy-playwright PageMethod) → Playwright DOM fallback → LLM extraction. Extracts price, rating, review_count. Handles pagination via PageMethod load-more clicking.
-- `src/scrapper/items.py` — `PostItem`, `ProductItem` (with `scraped_at` timestamps in UTC)
+- `src/scrapper/spiders/generic.py` — Universal spider: curl-cffi → Playwright fallback → LLM extraction with type-hinted prompts. Supports listing, article, product, forum page types.
+- `src/scrapper/items.py` — `PostItem`, `ProductItem`, `GenericItem` (with `scraped_at` timestamps in UTC)
 - `src/scrapper/pipelines.py` — Validate → DataQuality → Dedup → Supabase upsert (with 3 retries + DropItem on failure)
 - `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright), UA rotation (incl. Playwright)
 - `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging)
-- `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else (uses `blockingCallFromThread` for fallback)
+- `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else
 - `src/scrapper/llm_extractor.py` — `LLMExtractor` class (OpenAI gpt-4o-mini, JSON mode, SQLite cache) + shared `llm_fallback()` function (properly closes cache)
 - `src/scrapper/llm_cache.py` — SQLite cache with TTL expiry, thread-safe access, timezone-aware timestamps
-- `src/scrapper/prompts/` — Prompt templates per site (hotmart.py, reddit.py)
+- `src/scrapper/prompts/` — Prompt templates per site (hotmart.py, reddit.py, generic.py)
 - `src/scrapper/extensions.py` — StatsLogger (with corrupted JSON recovery + portalocker cross-platform locking), EmailAlerter with anomaly detection
 - `src/scrapper/dashboard.py` — Static HTML metrics dashboard (template in `templates/dashboard.html`)
 - `src/scrapper/templates/` — HTML templates (dashboard.html with `__DATA__` placeholder)
@@ -87,6 +89,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 - `src/scrapper/utils.py` — `USER_AGENTS`, `random_user_agent()`, `ensure_dir()`, `slugify()`, `FakeFailure`
 - `bin/health-check.sh` — Scrapyd health monitoring script
 - `scripts/setup_supabase.sql` — DB schema with RLS policies
+- `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling
 
 ## Spider Status
 
@@ -94,6 +97,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 |--------|--------|----------|-------|
 | Reddit | ✅ Works | RSS → HTML fallback → LLM | old.reddit.com, incremental scraping, score/comments/published_at |
 | Hotmart | ✅ Works | API → Playwright fallback → LLM | Playwright for API discovery via PageMethod, price/review extraction, pagination |
+| Generic | ✅ Works | curl-cffi → Playwright → LLM + pagination | 10 page types + pagination (links/load-more/scroll), type-hinted prompts |
 | Amazon | ⛔ Deprecated | — | Needs residential proxies |
 | MercadoLibre | ⛔ Deprecated | — | Needs residential proxies |
 | Quora | ⛔ Deprecated | — | Cloudflare + login + residential proxies required |
@@ -105,7 +109,6 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | `SUPABASE_URL` | — | Supabase project URL |
 | `SUPABASE_KEY` | — | Supabase service role key (⚠️ bypasses RLS) |
 | `PROXY_LIST` | — | Comma-separated proxy URLs |
-| `ALERT_WEBHOOK_URL` | — | Discord/Slack webhook for error alerts |
 | `HEADLESS` | `true` | Run Playwright in headless mode |
 | `PLAYWRIGHT_HUMAN_SIMULATION` | `true` | Enable random scroll/delay + canvas/WebGL spoofing |
 | `OPENAI_API_KEY` | — | OpenAI API key for LLM fallback extraction |
@@ -116,11 +119,22 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | `CURL_CFFI_ENABLED` | `true` | Use curl-cffi with TLS impersonation |
 | `CURL_CFFI_IMPERSONATE` | `chrome124` | Browser fingerprint to impersonate |
 | `COOKIE_PERSIST_ENABLED` | `true` | Persist cookies between runs |
+| `SCHEDULE_ENABLED` | `false` | Enable Scrapyd cron scheduling |
+| `RAG_EXPORT_ENABLED` | `true` | Export scraped items as Markdown + JSONL |
+| `LOG_LEVEL` | `INFO` | Log verbosity level |
+| `ALERT_WEBHOOK_URL` | — | Discord/Slack webhook for error alerts |
+| `ALERT_SMTP_HOST` | `smtp.gmail.com` | SMTP host for email alerts |
+| `ALERT_SMTP_PORT` | `587` | SMTP port for email alerts |
+| `ALERT_EMAIL_FROM` | — | Sender email address |
+| `ALERT_EMAIL_PASSWORD` | — | SMTP password (Gmail App Password) |
+| `ALERT_EMAIL_TO` | — | Recipient email address |
+| `ALERT_ERROR_THRESHOLD` | `5` | Error count to trigger email alert |
+| `SCRAPYD_API_URL` | `http://localhost:6800/schedule.json` | Scrapyd API endpoint |
 
 ## Testing
 
-- 167 tests passing (items, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export)
-- 41% coverage (core modules at 80-100%, spiders need Playwright for full coverage)
+- 195 tests passing (items, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic)
+- 73% coverage (core modules at 80-100%, spiders need Playwright for full coverage)
 - Integration tests use fixture files (XML/JSON/HTML) for deterministic offline testing
 - `asyncio_mode = "auto"` in pyproject.toml
 - Supabase deprecation warnings suppressed via `filterwarnings` in pyproject.toml
