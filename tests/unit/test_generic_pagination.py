@@ -82,6 +82,9 @@ class TestDetectLoadMore:
         html = '<html><body><p>Hello</p></body></html>'
         assert PaginationDetector.detect_pagination_type(html) is None
 
+    def test_empty_html_returns_none_detect(self):
+        assert PaginationDetector.detect_pagination_type("") is None
+
     def test_load_more_overrides_link(self):
         html = '<a rel="next" href="/page/2">Next</a><button class="load-more">Load more</button>'
         assert PaginationDetector.detect_pagination_type(html) == "load_more"

@@ -51,6 +51,12 @@ class PaginationDetector:
         'a[href*="&offset="]',
     ]
 
+    @staticmethod
+    def _is_link_text_pagination(text: str) -> bool:
+        return any(w in text for w in ("next", "siguiente", "»", ">")) or any(
+            c.isdigit() for c in text
+        )
+
     @classmethod
     def find_next_url(cls, html: str, base_url: str) -> str | None:
         if not html.strip():
@@ -69,7 +75,7 @@ class PaginationDetector:
             for link in links:
                 href = link.css("::attr(href)").get("")
                 text = "".join(link.css("::text").getall()).lower().strip()
-                if href and (any(w in text for w in ("next", "siguiente", "»", ">")) or any(c.isdigit() for c in text)):
+                if href and cls._is_link_text_pagination(text):
                     return urljoin(base_url, href)
 
         return None
@@ -101,7 +107,7 @@ class PaginationDetector:
             links = sel.css(css_sel)
             for link in links:
                 text = "".join(link.css("::text").getall()).lower().strip()
-                if text and text.isdigit():
+                if text and cls._is_link_text_pagination(text):
                     return "link"
 
         return None
