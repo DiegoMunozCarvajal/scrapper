@@ -1,5 +1,6 @@
 import re
 from html import unescape
+from pathlib import Path
 
 import scrapy
 from scrapy import Request
@@ -36,6 +37,8 @@ class RamaSpider(scrapy.Spider):
     def start_requests(self):
         query = getattr(self, "query", "derecho fundamental")
         limit = int(getattr(self, "limit", "20"))
+        download = getattr(self, "download", None)
+        download_dir = getattr(self, "download_dir", "downloads/rama")
 
         yield Request(
             url="https://consultajurisprudencial.ramajudicial.gov.co/WebRelatoria/csj/index.xhtml",
@@ -48,12 +51,16 @@ class RamaSpider(scrapy.Spider):
                 ],
                 "query": query,
                 "limit": limit,
+                "download": download and download not in ("0", "false", "no"),
+                "download_dir": download_dir,
             },
         )
 
     async def parse(self, response):
         query = response.meta["query"]
         limit = response.meta["limit"]
+        download = response.meta.get("download", False)
+        download_dir = response.meta.get("download_dir", "downloads/rama")
         page_obj = response.meta.get("playwright_page")
 
         if not page_obj:
@@ -100,6 +107,7 @@ class RamaSpider(scrapy.Spider):
                 seen.add(uid)
 
                 total_yielded += 1
+                item_data["_count"] = total_yielded
                 yield GenericItem(
                     site=self.site,
                     url=item_data.get("url", ""),
@@ -110,9 +118,12 @@ class RamaSpider(scrapy.Spider):
                         "strategy": "jsf_xml",
                         "query": query,
                         "extras": {k: v for k, v in item_data.items()
-                                   if k not in ("url", "title", "content")},
+                                   if k not in ("url", "title", "content", "_count")},
                     },
                 )
+
+                if download and item_data.get("id"):
+                    await self._download_via_page(page_obj, item_data, download_dir)
 
             if total_yielded >= limit:
                 break
@@ -125,6 +136,37 @@ class RamaSpider(scrapy.Spider):
 
         self.logger.info("Finished: %d items from %d pages", total_yielded, page_num)
         await page_obj.close()
+
+    async def _download_via_page(self, page, item_data, download_dir):
+        """Download providencia HTML via Playwright page (uses session cookies)."""
+        prov_id = item_data.get("id")
+        prov = item_data.get("providencia", prov_id)
+        if not prov_id:
+            return
+
+        dl_dir = Path(download_dir)
+        dl_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{prov}.html" if prov else f"{prov_id}.html"
+        filepath = dl_dir / filename
+
+        if filepath.exists():
+            return
+
+        url = f"https://consultajurisprudencial.ramajudicial.gov.co/WebRelatoria/FileReferenceServlet?corp=csj&ext=html&file={prov_id}"
+
+        try:
+            content = await page.evaluate("""
+                async (url) => {
+                    const resp = await fetch(url);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return await resp.text();
+                }
+            """, url)
+            filepath.write_text(content, encoding="utf-8")
+            self.logger.info("Downloaded %s", filename)
+        except Exception as e:
+            self.logger.warning("Download failed for %s: %s", filename, e)
 
     @staticmethod
     def _parse_xml(xml_text):
