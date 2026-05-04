@@ -57,3 +57,40 @@ class ProductItem(scrapy.Item):
         super().__init__(*args, **kwargs)
         if "scraped_at" not in self:
             self["scraped_at"] = datetime.now(timezone.utc).isoformat()
+
+
+class GenericItem(scrapy.Item):
+    site = scrapy.Field()
+    url = scrapy.Field()
+    page_type = scrapy.Field()
+    title = scrapy.Field()
+    content = scrapy.Field()
+    price = scrapy.Field()
+    currency = scrapy.Field(default="USD")
+    rating = scrapy.Field()
+    review_count = scrapy.Field(default=0)
+    score = scrapy.Field()
+    author = scrapy.Field()
+    published_at = scrapy.Field()
+    metadata = scrapy.Field(default={})
+    quality_issues = scrapy.Field()
+    scraped_at = scrapy.Field()
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            defaults = {
+                "currency": "USD",
+                "review_count": 0,
+                "metadata": {},
+                "quality_issues": [],
+            }
+            if key in defaults:
+                return defaults[key]
+            raise
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "scraped_at" not in self:
+            self["scraped_at"] = datetime.now(timezone.utc).isoformat()

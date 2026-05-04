@@ -4,19 +4,19 @@ version = "0.3.0"
 description = "Multi-site web scraper — Reddit, Hotmart (+ deprecated: Amazon, MercadoLibre, Quora)"
 requires-python = ">=3.11"
 dependencies = [
-    "scrapy>=2.11",
-    "scrapy-playwright>=0.0.1",
-    "playwright-stealth>=2.0",
+    "scrapy>=2.11,<3",
+    "scrapy-playwright>=0.0.40",
+    "playwright-stealth>=2.0,<3",
     "playwright>=1.45",
-    "supabase>=2.7",
-    "beautifulsoup4>=4.12",
-    "tenacity>=8.3",
-    "loguru>=0.7",
-    "python-dotenv>=1.0",
-    "feedparser>=6.0",
-    "curl-cffi>=0.7",
-    "openai>=1.0",
-    "portalocker>=2.8",
+    "supabase>=2.7,<3",
+    "beautifulsoup4>=4.12,<5",
+    "tenacity>=8.3,<10",
+    "loguru>=0.7,<1",
+    "python-dotenv>=1.0,<2",
+    "feedparser>=6.0,<7",
+    "curl-cffi>=0.7,<1",
+    "openai>=1.0,<3",
+    "portalocker>=2.8,<4",
 ]
 
 [project.optional-dependencies]

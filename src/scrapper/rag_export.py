@@ -4,7 +4,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .items import PostItem
+from .items import GenericItem, PostItem
 from .utils import slugify
 
 
@@ -28,8 +28,10 @@ class MarkdownExportPipeline:
     def open_spider(self):
         posts_dir = self.output_dir / "posts"
         products_dir = self.output_dir / "products"
+        pages_dir = self.output_dir / "pages"
         posts_dir.mkdir(parents=True, exist_ok=True)
         products_dir.mkdir(parents=True, exist_ok=True)
+        pages_dir.mkdir(parents=True, exist_ok=True)
         self._collision_counters = {}
         logger.info(f"Markdown export dirs ready: {self.output_dir}")
 
@@ -38,24 +40,31 @@ class MarkdownExportPipeline:
 
     def process_item(self, item):
         is_post = isinstance(item, PostItem)
+        is_generic = isinstance(item, GenericItem)
         site = item.get("site", "unknown")
-        source_type = "social_media" if is_post else "product_listing"
+
+        if is_generic:
+            page_type = item.get("page_type") or "pages"
+            source_type = page_type
+            target_dir = self.output_dir / "pages"
+        else:
+            source_type = "social_media" if is_post else "product_listing"
+            target_dir = self.output_dir / ("posts" if is_post else "products")
 
         title = item.get("title", "untitled")
         raw_slug = slugify(title).lower()[:80].strip("_")
-        slug = raw_slug or "untitled"
+        slug_text = raw_slug or "untitled"
 
-        target_dir = self.output_dir / ("posts" if is_post else "products")
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{site}-{slug}.md"
+        filename = f"{site}-{slug_text}.md"
         filepath = target_dir / filename
 
         if filepath.exists():
             counter_key = str(filepath)
             count = self._collision_counters.get(counter_key, 1) + 1
             self._collision_counters[counter_key] = count
-            filename = f"{site}-{slug}-{count}.md"
+            filename = f"{site}-{slug_text}-{count}.md"
             filepath = target_dir / filename
 
         frontmatter = self._build_frontmatter(item, source_type)
@@ -113,7 +122,12 @@ class ChunkedJSONPipeline:
 
     def _build_chunk(self, item) -> dict:
         is_post = isinstance(item, PostItem)
-        source_type = "social_media" if is_post else "product_listing"
+        is_generic = isinstance(item, GenericItem)
+
+        if is_generic:
+            source_type = item.get("page_type") or "pages"
+        else:
+            source_type = "social_media" if is_post else "product_listing"
         url = item.get("url", "")
         chunk_hash = hashlib.sha256(url.encode()).hexdigest()[:8]
         if not url:

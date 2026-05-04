@@ -5,7 +5,7 @@ from loguru import logger
 from scrapy.exceptions import DropItem
 from supabase import create_client
 
-from .items import PostItem
+from .items import GenericItem, PostItem
 
 
 class DataQualityPipeline:
@@ -50,6 +50,7 @@ class DataQualityPipeline:
     def _validate(self, item) -> list[str]:
         issues = []
         is_post = isinstance(item, PostItem)
+        is_generic = isinstance(item, GenericItem)
 
         url = item.get("url", "")
         if url:
@@ -67,23 +68,14 @@ class DataQualityPipeline:
         if content is not None and len(str(content)) < 10:
             issues.append("content_too_short")
 
-        if not is_post:
-            price = item.get("price")
-            if price is not None:
-                try:
-                    if float(price) <= 0:
-                        issues.append("price_invalid")
-                except (TypeError, ValueError):
-                    issues.append("price_not_numeric")
-
-            rating = item.get("rating")
-            if rating is not None:
-                try:
-                    r = float(rating)
-                    if r < 0 or r > 5:
-                        issues.append("rating_out_of_range")
-                except (TypeError, ValueError):
-                    issues.append("rating_not_numeric")
+        if is_generic:
+            page_type = item.get("page_type")
+            if page_type == "product":
+                self._validate_price_rating(item, issues)
+            elif page_type == "forum":
+                self._validate_score(item, issues)
+        elif not is_post:
+            self._validate_price_rating(item, issues)
         else:
             score = item.get("score")
             if score is not None:
@@ -93,6 +85,34 @@ class DataQualityPipeline:
                     issues.append("score_not_integer")
 
         return issues
+
+    @staticmethod
+    def _validate_price_rating(item, issues):
+        price = item.get("price")
+        if price is not None:
+            try:
+                if float(price) <= 0:
+                    issues.append("price_invalid")
+            except (TypeError, ValueError):
+                issues.append("price_not_numeric")
+
+        rating = item.get("rating")
+        if rating is not None:
+            try:
+                r = float(rating)
+                if r < 0 or r > 5:
+                    issues.append("rating_out_of_range")
+            except (TypeError, ValueError):
+                issues.append("rating_not_numeric")
+
+    @staticmethod
+    def _validate_score(item, issues):
+        score = item.get("score")
+        if score is not None:
+            try:
+                int(score)
+            except (TypeError, ValueError):
+                issues.append("score_not_integer")
 
 
 class ValidatePipeline:
@@ -146,7 +166,12 @@ class SupabasePipeline:
         )
 
     def process_item(self, item):
-        table = "posts" if isinstance(item, PostItem) else "products"
+        if isinstance(item, GenericItem):
+            table = "scraped_pages"
+        elif isinstance(item, PostItem):
+            table = "posts"
+        else:
+            table = "products"
         data = dict(item)
         for attempt in range(1, 4):
             try:

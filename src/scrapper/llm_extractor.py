@@ -48,8 +48,13 @@ class LLMExtractor:
                 )
                 content = response.choices[0].message.content
                 data = json.loads(content)
-                items = data.get("products", data.get("posts", []))
+                items = data.get("products", data.get("posts", data.get("items", [])))
                 if isinstance(items, list):
+                    page_type = data.get("page_type")
+                    if page_type:
+                        for item in items:
+                            if isinstance(item, dict) and "page_type" not in item:
+                                item["page_type"] = page_type
                     all_results.extend(items)
             except (RateLimitError, AuthenticationError) as e:
                 logger.error("OpenAI API error: %s", e)
@@ -118,13 +123,13 @@ def llm_fallback(spider, response, item_class):
         spider.logger.warning("LLM fallback: spider has no LLM_PROMPT, skipping")
         return
 
-    query = response.meta["query"]
+    query = response.meta.get("query", response.url)
     limit = int(response.meta.get("limit", 10))
     extractor = None
 
     try:
         extractor = LLMExtractor()
-        site = getattr(spider, "site", "unknown")
+        site = response.meta.get("site", getattr(spider, "site", "unknown"))
 
         items = extractor.extract(
             html=response.text,

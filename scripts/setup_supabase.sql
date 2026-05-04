@@ -69,17 +69,44 @@ CREATE TABLE IF NOT EXISTS products (
     UNIQUE(site, url)
 );
 
+-- ── Generic scraped pages (LLM extraction) ─────────
+CREATE TABLE IF NOT EXISTS scraped_pages (
+    id            BIGSERIAL PRIMARY KEY,
+    site          TEXT NOT NULL DEFAULT 'generic',
+    url           TEXT NOT NULL,
+    page_type     TEXT,
+    title         TEXT,
+    content       TEXT,
+    price         DECIMAL(12,2),
+    currency      TEXT DEFAULT 'USD',
+    rating        DECIMAL(3,2),
+    review_count  INTEGER DEFAULT 0,
+    score         INTEGER DEFAULT 0,
+    author        TEXT,
+    published_at  TEXT,
+    quality_issues JSONB DEFAULT '[]',
+    metadata      JSONB DEFAULT '{}',
+    scrape_job_id INTEGER REFERENCES scrape_jobs(id),
+    scraped_at    TIMESTAMPTZ DEFAULT NOW(),
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(site, url)
+);
+
 -- ── Indexes ─────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_posts_site ON posts(site);
 CREATE INDEX IF NOT EXISTS idx_posts_scraped_at ON posts(scraped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_site ON products(site);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
 CREATE INDEX IF NOT EXISTS idx_products_scraped_at ON products(scraped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scraped_pages_type ON scraped_pages (page_type);
+CREATE INDEX IF NOT EXISTS idx_scraped_pages_site ON scraped_pages (site);
+CREATE INDEX IF NOT EXISTS idx_scraped_pages_scraped_at ON scraped_pages (scraped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status);
 
 -- ── Row Level Security (RLS) ─────────────────────
 ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scraped_pages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scrape_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -91,6 +118,11 @@ END $$;
 
 DO $$ BEGIN
     CREATE POLICY "Public can read products" ON products FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Public can read scraped_pages" ON scraped_pages FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -107,6 +139,11 @@ END $$;
 
 DO $$ BEGIN
     CREATE POLICY "Service can do anything with products" ON products FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Service can do anything with scraped_pages" ON scraped_pages FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

@@ -1,6 +1,6 @@
 import pytest
 from scrapy.exceptions import DropItem
-from scrapper.items import PostItem, ProductItem
+from scrapper.items import GenericItem, PostItem, ProductItem
 from scrapper.pipelines import ValidatePipeline, DedupInMemoryPipeline, DataQualityPipeline
 
 
@@ -186,3 +186,71 @@ class TestDataQualityPipeline:
         stats = pipe._stats["test_spider"]
         assert stats["total"] == 1
         assert stats["issues"] == 1
+
+    def test_generic_product_price_rating_validation(self):
+        pipe = DataQualityPipeline()
+        pipe._crawler = FakeCrawler()
+        item = GenericItem(
+            site="example.com",
+            url="https://example.com/product",
+            title="Test Product",
+            page_type="product",
+            price=-10,
+            rating=6.0,
+        )
+        pipe.process_item(item)
+        assert "price_invalid" in item["quality_issues"]
+        assert "rating_out_of_range" in item["quality_issues"]
+
+    def test_generic_forum_score_validation(self):
+        pipe = DataQualityPipeline()
+        pipe._crawler = FakeCrawler()
+        item = GenericItem(
+            site="example.com",
+            url="https://example.com/post",
+            title="Test Post",
+            page_type="forum",
+            score="not-a-number",
+        )
+        pipe.process_item(item)
+        assert "score_not_integer" in item["quality_issues"]
+
+    def test_generic_article_no_price_validation(self):
+        pipe = DataQualityPipeline()
+        pipe._crawler = FakeCrawler()
+        item = GenericItem(
+            site="example.com",
+            url="https://example.com/article",
+            title="Test Article",
+            page_type="article",
+            content="This is a proper article with enough content.",
+        )
+        pipe.process_item(item)
+        assert item.get("quality_issues") == []
+
+    def test_generic_unknown_type_basic_validation_only(self):
+        pipe = DataQualityPipeline()
+        pipe._crawler = FakeCrawler()
+        item = GenericItem(
+            site="example.com",
+            url="https://example.com/page",
+            title="Test Page",
+            page_type="other",
+        )
+        pipe.process_item(item)
+        assert item.get("quality_issues") == []
+
+    def test_generic_validate_passes_valid(self):
+        pipe = ValidatePipeline()
+        pipe._crawler = FakeCrawler()
+        item = GenericItem(site="example.com", url="http://x.com", title="Valid")
+        result = pipe.process_item(item)
+        assert result is item
+
+    def test_generic_dedup_works(self):
+        pipe = DedupInMemoryPipeline()
+        item1 = GenericItem(site="example.com", url="http://x.com/1", title="A")
+        item2 = GenericItem(site="example.com", url="http://x.com/1", title="B")
+        pipe.process_item(item1)
+        with pytest.raises(DropItem, match="Duplicate URL"):
+            pipe.process_item(item2)

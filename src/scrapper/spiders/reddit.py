@@ -18,7 +18,6 @@ class RedditSpider(scrapy.Spider):
     LLM_PROMPT = REDDIT_PROMPT
 
     custom_settings = {
-        "DOWNLOAD_HANDLERS": {},
         "CONCURRENT_REQUESTS": 1,
         "DOWNLOAD_DELAY": 2,
     }

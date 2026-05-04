@@ -1,7 +1,7 @@
 import json
 import tempfile
 from pathlib import Path
-from scrapper.items import PostItem, ProductItem
+from scrapper.items import GenericItem, PostItem, ProductItem
 from scrapper.rag_export import MarkdownExportPipeline, ChunkedJSONPipeline
 
 
@@ -190,3 +190,38 @@ class TestChunkedJSONPipeline:
         chunk_id1 = pipe._build_chunk(item)
         chunk_id2 = pipe._build_chunk(item)
         assert chunk_id1 == chunk_id2
+
+    def test_generic_item_goes_to_pages_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pipe = MarkdownExportPipeline(output_dir=tmpdir)
+            pipe.open_spider()
+            assert Path(tmpdir, "pages").exists()
+            item = GenericItem(
+                site="example.com",
+                url="https://example.com/product",
+                title="Test Product",
+                page_type="product",
+                price=29.99,
+            )
+            pipe.process_item(item)
+            files = list(Path(tmpdir, "pages").glob("*.md"))
+            assert len(files) == 1
+            content = files[0].read_text()
+            assert "source_type: product" in content
+
+    def test_generic_item_jsonl_source_type(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pipe = ChunkedJSONPipeline(output_dir=tmpdir)
+            pipe.open_spider()
+            item = GenericItem(
+                site="example.com",
+                url="https://example.com/article",
+                title="Test Article",
+                page_type="article",
+                content="Article body text here.",
+            )
+            pipe.process_item(item)
+            pipe.close_spider()
+            lines = Path(tmpdir, "chunks.jsonl").read_text().strip().split("\n")
+            chunk = json.loads(lines[0])
+            assert chunk["metadata"]["source_type"] == "article"

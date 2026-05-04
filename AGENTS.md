@@ -3,9 +3,21 @@
 ## Setup
 
 ```bash
+# Option 1: editable install (development)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-playwright install chromium
+python -m playwright install chromium
+
+# Option 2: from requirements.txt (pinned versions, portable)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e ".[dev]"
+python -m playwright install chromium
+
+# Option 3: from pyproject.toml only (minimal)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+python -m playwright install chromium
 ```
 
 ## Commands
