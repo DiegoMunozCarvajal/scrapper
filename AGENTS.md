@@ -76,7 +76,9 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 - `src/scrapper/spiders/hotmart.py` — Triple strategy: internal API interception (via scrapy-playwright PageMethod) → Playwright DOM fallback → LLM extraction. Extracts price, rating, review_count. Handles pagination via PageMethod load-more clicking.
 - `src/scrapper/spiders/generic.py` — Universal spider: curl-cffi → Playwright fallback → LLM extraction with type-hinted prompts. Supports listing, article, product, forum page types.
 - `src/scrapper/items.py` — `PostItem`, `ProductItem`, `GenericItem` (with `scraped_at` timestamps in UTC)
+- `src/scrapper/models.py` — `Post`, `Product`, `ScrapeResult` dataclasses (used across spiders and pipelines)
 - `src/scrapper/pipelines.py` — Validate → DataQuality → Dedup → Supabase upsert (with 3 retries + DropItem on failure)
+- `src/scrapper/pagination.py` — `PaginationDetector` class for detecting next-page URLs and pagination type (links/load-more/scroll) from HTML
 - `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright), UA rotation (incl. Playwright)
 - `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging)
 - `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else
@@ -137,8 +139,8 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 
 ## Testing
 
-- 228 tests passing (items, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
-- 73% coverage (core modules at 80-100%, spiders need Playwright for full coverage)
+- 273 tests passing (items, models, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
+- 65% coverage (core modules at 77-100%, spiders need Playwright for full coverage)
 - Integration tests use fixture files (XML/JSON/HTML) for deterministic offline testing
 - `asyncio_mode = "auto"` in pyproject.toml
 - Supabase deprecation warnings suppressed via `filterwarnings` in pyproject.toml
