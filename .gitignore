@@ -19,3 +19,8 @@ llm_cache.db
 cookies/
 metrics/
 rag_output/
+dbs/
+eggs/
+graphify-out/
+items/
+generate_schedule.py
