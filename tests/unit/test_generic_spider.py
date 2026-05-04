@@ -204,3 +204,209 @@ def test_handle_error_logs_message():
 
     spider._handle_error(failure)
     # No exception raised, error is logged
+
+
+def test_start_requests_includes_limit_in_meta():
+    spider = GenericSpider()
+    spider.url = "https://example.com/search"
+    spider.limit = "30"
+
+    requests = list(spider.start_requests())
+    assert requests[0].meta["limit"] == 30
+
+
+def test_start_requests_default_limit():
+    spider = GenericSpider()
+    spider.url = "https://example.com/search"
+    # spider.limit not set
+
+    requests = list(spider.start_requests())
+    assert requests[0].meta["limit"] == 10
+
+
+def test_parse_follows_pagination_link():
+    html = '<html><body><h1>Results</h1><a rel="next" href="/page/2">Next</a></body></html>'
+    request = Request("https://example.com/search")
+    response = HtmlResponse(url=request.url, body=html.encode(), request=request)
+    response.meta["site"] = "example.com"
+    response.meta["task_url"] = request.url
+    response.meta["limit"] = 20
+
+    llm_data = {"page_type": "listing", "items": [
+        {"title": "Result 1", "url": "https://example.com/1"},
+        {"title": "Result 2", "url": "https://example.com/2"},
+    ]}
+
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with patch("scrapper.llm_extractor.OpenAI") as mock_openai:
+            mock_client = mock_openai.return_value
+
+            class FakeChoice:
+                def __init__(self, content):
+                    self.message = MagicMock()
+                    self.message.content = content
+
+            mock_client.chat.completions.create.return_value = MagicMock(
+                choices=[FakeChoice(json.dumps(llm_data))],
+                usage=MagicMock(),
+            )
+
+            spider = GenericSpider()
+            results = list(spider.parse(response))
+
+    items = [r for r in results if not isinstance(r, Request)]
+    requests_list = [r for r in results if isinstance(r, Request)]
+
+    assert len(items) == 2
+    assert len(requests_list) == 1
+    assert requests_list[0].url == "https://example.com/page/2"
+    assert requests_list[0].meta["limit"] == 18
+    assert requests_list[0].meta["_page_depth"] == 1
+
+
+def test_parse_stops_at_limit():
+    html = '<html><body><h1>Results</h1><a rel="next" href="/page/2">Next</a></body></html>'
+    request = Request("https://example.com/search")
+    response = HtmlResponse(url=request.url, body=html.encode(), request=request)
+    response.meta["site"] = "example.com"
+    response.meta["task_url"] = request.url
+    response.meta["limit"] = 1
+
+    llm_data = {"page_type": "listing", "items": [
+        {"title": "Result 1", "url": "https://example.com/1"},
+        {"title": "Result 2", "url": "https://example.com/2"},
+    ]}
+
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with patch("scrapper.llm_extractor.OpenAI") as mock_openai:
+            mock_client = mock_openai.return_value
+
+            class FakeChoice:
+                def __init__(self, content):
+                    self.message = MagicMock()
+                    self.message.content = content
+
+            mock_client.chat.completions.create.return_value = MagicMock(
+                choices=[FakeChoice(json.dumps(llm_data))],
+                usage=MagicMock(),
+            )
+
+            spider = GenericSpider()
+            results = list(spider.parse(response))
+
+    items = [r for r in results if not isinstance(r, Request)]
+    requests_list = [r for r in results if isinstance(r, Request)]
+
+    assert len(items) == 1
+    assert len(requests_list) == 0
+
+
+def test_parse_playwright_for_load_more():
+    html = '<html><body><h1>Results</h1><button class="load-more">Load more</button></body></html>'
+    request = Request("https://example.com/search")
+    response = HtmlResponse(url=request.url, body=html.encode(), request=request)
+    response.meta["site"] = "example.com"
+    response.meta["task_url"] = request.url
+    response.meta["limit"] = 10
+
+    llm_data = {"page_type": "listing", "items": [
+        {"title": "Result 1", "url": "https://example.com/1"},
+    ]}
+
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with patch("scrapper.llm_extractor.OpenAI") as mock_openai:
+            mock_client = mock_openai.return_value
+
+            class FakeChoice:
+                def __init__(self, content):
+                    self.message = MagicMock()
+                    self.message.content = content
+
+            mock_client.chat.completions.create.return_value = MagicMock(
+                choices=[FakeChoice(json.dumps(llm_data))],
+                usage=MagicMock(),
+            )
+
+            spider = GenericSpider()
+            results = list(spider.parse(response))
+
+    items = [r for r in results if not isinstance(r, Request)]
+    requests_list = [r for r in results if isinstance(r, Request)]
+
+    assert len(items) == 1
+    assert len(requests_list) == 1
+    pw_req = requests_list[0]
+    assert pw_req.meta["playwright"] is True
+    assert pw_req.meta["_pagination_type"] == "load_more"
+    assert pw_req.meta["limit"] == 9
+    assert "playwright_page_methods" in pw_req.meta
+
+
+def test_parse_max_pages_depth():
+    html = '<html><body><h1>Page 5</h1><a rel="next" href="/page/6">Next</a></body></html>'
+    request = Request("https://example.com/search")
+    response = HtmlResponse(url=request.url, body=html.encode(), request=request)
+    response.meta["site"] = "example.com"
+    response.meta["task_url"] = request.url
+    response.meta["limit"] = 100
+    response.meta["max_pages"] = 5
+    response.meta["_page_depth"] = 4
+
+    llm_data = {"page_type": "listing", "items": [
+        {"title": "Result", "url": "https://example.com/1"},
+    ]}
+
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with patch("scrapper.llm_extractor.OpenAI") as mock_openai:
+            mock_client = mock_openai.return_value
+
+            class FakeChoice:
+                def __init__(self, content):
+                    self.message = MagicMock()
+                    self.message.content = content
+
+            mock_client.chat.completions.create.return_value = MagicMock(
+                choices=[FakeChoice(json.dumps(llm_data))],
+                usage=MagicMock(),
+            )
+
+            spider = GenericSpider()
+            results = list(spider.parse(response))
+
+    requests_list = [r for r in results if isinstance(r, Request)]
+    assert len(requests_list) == 0
+
+
+def test_parse_stops_at_default_max_pages():
+    html = '<html><body><h1>Page 11</h1><a rel="next" href="/page/12">Next</a></body></html>'
+    request = Request("https://example.com/search")
+    response = HtmlResponse(url=request.url, body=html.encode(), request=request)
+    response.meta["site"] = "example.com"
+    response.meta["task_url"] = request.url
+    response.meta["limit"] = 100
+    response.meta["max_pages"] = 10
+    response.meta["_page_depth"] = 9
+
+    llm_data = {"page_type": "listing", "items": [
+        {"title": "Result", "url": "https://example.com/1"},
+    ]}
+
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with patch("scrapper.llm_extractor.OpenAI") as mock_openai:
+            mock_client = mock_openai.return_value
+
+            class FakeChoice:
+                def __init__(self, content):
+                    self.message = MagicMock()
+                    self.message.content = content
+
+            mock_client.chat.completions.create.return_value = MagicMock(
+                choices=[FakeChoice(json.dumps(llm_data))],
+                usage=MagicMock(),
+            )
+
+            spider = GenericSpider()
+            results = list(spider.parse(response))
+
+    requests_list = [r for r in results if isinstance(r, Request)]
+    assert len(requests_list) == 0
