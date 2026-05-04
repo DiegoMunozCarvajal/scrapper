@@ -71,6 +71,8 @@ class GenericItem(scrapy.Item):
     review_count = scrapy.Field(default=0)
     score = scrapy.Field()
     author = scrapy.Field()
+    image_url = scrapy.Field()
+    category = scrapy.Field()
     published_at = scrapy.Field()
     metadata = scrapy.Field(default={})
     quality_issues = scrapy.Field()

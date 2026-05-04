@@ -101,3 +101,21 @@ def test_generic_item_has_scraped_at():
     item = GenericItem(site="example.com", url="http://x.com", title="X")
     assert item.get("scraped_at") is not None
     assert "T" in item["scraped_at"]
+
+
+def test_generic_item_new_fields():
+    item = GenericItem(
+        site="example.com",
+        url="https://example.com/job/1",
+        title="Senior Engineer",
+        image_url="https://example.com/img/photo.jpg",
+        category="Engineering",
+    )
+    assert item["image_url"] == "https://example.com/img/photo.jpg"
+    assert item["category"] == "Engineering"
+
+
+def test_generic_item_new_fields_default_to_none():
+    item = GenericItem(site="example.com", url="http://x.com", title="X")
+    assert item.get("image_url") is None
+    assert item.get("category") is None
