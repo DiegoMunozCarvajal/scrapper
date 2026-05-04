@@ -100,6 +100,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | Hotmart | ✅ Works | API → Playwright fallback → LLM | Playwright for API discovery via PageMethod, price/review extraction, pagination |
 | Generic | ✅ Works | curl-cffi → Playwright → LLM + pagination | 10 page types + pagination (links/load-more/scroll), type-hinted prompts |
 | Corte Constitucional | ✅ Works | Playwright → Google CSE DOM | Jurisprudence search via /buscador?q=, pagination, visible browser required |
+| Rama Judicial | ✅ Works | Playwright → PrimeFaces JSF XML | CSJ search via POST+ViewState, XML interception, virtual pagination |
 | Amazon | ⛔ Deprecated | — | Needs residential proxies |
 | MercadoLibre | ⛔ Deprecated | — | Needs residential proxies |
 | Quora | ⛔ Deprecated | — | Cloudflare + login + residential proxies required |
