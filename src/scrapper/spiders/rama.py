@@ -1,3 +1,4 @@
+import asyncio
 import re
 from html import unescape
 from pathlib import Path
@@ -10,6 +11,7 @@ from ..items import GenericItem
 
 
 async def _wait_for_load(page):
+    """PageMethod: wait for the search page to be ready."""
     await page.wait_for_selector("#searchForm\\:searchButton, [id=\"searchForm:searchButton\"]", timeout=15000)
     return True
 
@@ -18,11 +20,12 @@ class RamaSpider(scrapy.Spider):
     """Spider for Rama Judicial - Corte Suprema de Justicia.
 
     Uses Playwright to fill the search form and navigate results via
-    PrimeFaces paginator button (j_idt217=Next). All pagination happens
-    within a single async parse call.
+    PrimeFaces paginator. All pagination happens within a single async
+    parse call.
 
     Usage:
         scrapy crawl rama -a query="derecho fundamental" -a limit=30
+        scrapy crawl rama -a query="sucesion" -a limit=10 -a download=1
     """
 
     name = "rama"
@@ -43,6 +46,7 @@ class RamaSpider(scrapy.Spider):
         yield Request(
             url="https://consultajurisprudencial.ramajudicial.gov.co/WebRelatoria/csj/index.xhtml",
             callback=self.parse,
+            errback=self._errback_close_page,
             meta={
                 "playwright": True,
                 "playwright_include_page": True,
@@ -67,75 +71,94 @@ class RamaSpider(scrapy.Spider):
             return
 
         captured_xml = []
+        _search_clicked = False
 
         def _on_response(resp):
             ct = resp.headers.get("content-type", "")
-            if "xml" in ct.lower() and "xhtml" in resp.url:
+            if "xml" in ct.lower() and "xhtml" in resp.url and _search_clicked:
                 captured_xml.append(resp)
 
         page_obj.on("response", _on_response)
 
-        await page_obj.locator('input[name="searchForm:temaInput"]').fill(query)
-        await page_obj.locator("#searchForm\\:searchButton").click()
-        await page_obj.wait_for_timeout(15000)
+        try:
+            await page_obj.locator('input[name="searchForm:temaInput"]').fill(query)
+            await page_obj.locator("#searchForm\\:searchButton").click()
+            _search_clicked = True
+            await page_obj.wait_for_timeout(15000)
 
-        total_yielded = 0
-        seen = set()
-        page_num = 0
-        max_pages = 200
+            total_yielded = 0
+            seen = set()
+            page_num = 0
+            max_pages = min(limit * 2, 200)
+            download_tasks = []
 
-        while total_yielded < limit and page_num < max_pages:
-            xml_text = None
-            next_idx = len(captured_xml) - 1
-            if next_idx >= 0:
-                try:
-                    xml_text = await captured_xml[next_idx].text()
-                except Exception:
-                    pass
+            while total_yielded < limit and page_num < max_pages:
+                xml_text = None
+                if captured_xml:
+                    try:
+                        xml_text = await captured_xml[-1].text()
+                    except Exception:
+                        pass
+                    captured_xml.clear()
 
-            if not xml_text:
-                self.logger.warning("No XML on page %d, stopping", page_num + 1)
-                break
+                if not xml_text:
+                    self.logger.warning("No XML on page %d, stopping", page_num + 1)
+                    break
 
-            items = self._parse_xml(xml_text)
-            for item_data in items:
+                items = self._parse_xml(xml_text)
+                for item_data in items:
+                    if total_yielded >= limit:
+                        break
+                    uid = item_data.get("url") or item_data.get("title", "")
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+
+                    total_yielded += 1
+                    yield GenericItem(
+                        site=self.site,
+                        url=item_data.get("url", ""),
+                        title=item_data.get("title", ""),
+                        content=item_data.get("content", ""),
+                        page_type="jurisprudencia",
+                        metadata={
+                            "strategy": "jsf_xml",
+                            "query": query,
+                            "extras": {k: v for k, v in item_data.items()
+                                       if k not in ("url", "title", "content")},
+                        },
+                    )
+
+                    if download and item_data.get("id"):
+                        download_tasks.append(
+                            asyncio.create_task(
+                                self._download_via_page(page_obj, item_data, download_dir)
+                            )
+                        )
+
                 if total_yielded >= limit:
                     break
-                uid = item_data.get("url") or item_data.get("title", "")
-                if uid in seen:
-                    continue
-                seen.add(uid)
 
-                total_yielded += 1
-                item_data["_count"] = total_yielded
-                yield GenericItem(
-                    site=self.site,
-                    url=item_data.get("url", ""),
-                    title=item_data.get("title", ""),
-                    content=item_data.get("content", ""),
-                    page_type="jurisprudencia",
-                    metadata={
-                        "strategy": "jsf_xml",
-                        "query": query,
-                        "extras": {k: v for k, v in item_data.items()
-                                   if k not in ("url", "title", "content", "_count")},
-                    },
-                )
+                page_num += 1
+                self.logger.info("Clicking Next (page %d, %d items)", page_num + 1, total_yielded)
 
-                if download and item_data.get("id"):
-                    await self._download_via_page(page_obj, item_data, download_dir)
+                next_btn = page_obj.locator("#resultForm\\:j_idt217")
+                if await next_btn.count() == 0:
+                    next_btn = page_obj.locator("#resultForm\\:j_idt218").locator("..").locator("button").nth(2)
+                await next_btn.click(timeout=5000)
+                await page_obj.wait_for_timeout(10000)
 
-            if total_yielded >= limit:
-                break
+        finally:
+            self.logger.info("Finished: %d items from %d pages", total_yielded, page_num)
+            if download_tasks:
+                await asyncio.gather(*download_tasks, return_exceptions=True)
+            await page_obj.close()
 
-            page_num += 1
-            self.logger.info("Clicking Next (page %d, %d items)", page_num + 1, total_yielded)
-
-            await page_obj.locator("#resultForm\\:j_idt217").click(timeout=5000)
-            await page_obj.wait_for_timeout(10000)
-
-        self.logger.info("Finished: %d items from %d pages", total_yielded, page_num)
-        await page_obj.close()
+    async def _errback_close_page(self, failure):
+        """Errback: close Playwright page on request failure."""
+        page = failure.request.meta.get("playwright_page")
+        if page:
+            await page.close()
 
     async def _download_via_page(self, page, item_data, download_dir):
         """Download providencia HTML via Playwright page (uses session cookies)."""
@@ -157,8 +180,8 @@ class RamaSpider(scrapy.Spider):
 
         try:
             content = await page.evaluate("""
-                async (url) => {
-                    const resp = await fetch(url);
+                async (download_url) => {
+                    const resp = await fetch(download_url);
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     return await resp.text();
                 }
@@ -212,6 +235,10 @@ class RamaSpider(scrapy.Spider):
                 if m:
                     item["tema"] = m.group(1).strip()
                     item["content"] = m.group(1).strip()
+
+                m = re.search(r"SALA\s*(DE\s*)?([A-ZÁÉÍÓÚ\s]+)\s+ID:", text)
+                if m:
+                    item["sala"] = m.group(2).strip()
 
                 if not item["title"]:
                     item["title"] = item.get("providencia") or item.get("id") or text[:80]
