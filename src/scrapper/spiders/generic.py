@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 
 import scrapy
+from loguru import logger
 from scrapy import Request
 from scrapy_playwright.page import PageMethod
 
@@ -12,18 +13,9 @@ from ..pagination import PaginationDetector
 
 async def _click_load_more_sp(page):
     """Playwright PageMethod: click load-more buttons repeatedly (max 10)."""
-    selectors = [
-        "button:has-text('Load more')",
-        "button:has-text('Show more')",
-        "a:has-text('Load more')",
-        "a:has-text('Show more')",
-        ".load-more",
-        ".show-more",
-        ".load-more-btn",
-    ]
     for _ in range(10):
         found = False
-        for sel in selectors:
+        for sel in PaginationDetector.LOAD_MORE_CSS_SELECTORS:
             btn = page.locator(sel).first
             if await btn.count() > 0:
                 try:
@@ -31,8 +23,8 @@ async def _click_load_more_sp(page):
                     await page.wait_for_timeout(1500)
                     found = True
                     break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Load-more click failed for selector '%s': %s", sel, e)
         if not found:
             break
     return True
@@ -40,12 +32,20 @@ async def _click_load_more_sp(page):
 
 async def _scroll_infinite_sp(page):
     """Playwright PageMethod: scroll down until height stops growing (max 10)."""
-    last_height = await page.evaluate("document.body.scrollHeight")
+    try:
+        last_height = await page.evaluate("document.body.scrollHeight")
+    except Exception as e:
+        logger.warning("Failed to get initial scroll height: %s", e)
+        return True
     stable_count = 0
     for _ in range(10):
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await page.wait_for_timeout(1500)
-        new_height = await page.evaluate("document.body.scrollHeight")
+        try:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1500)
+            new_height = await page.evaluate("document.body.scrollHeight")
+        except Exception as e:
+            logger.warning("Scroll/evaluate failed: %s", e)
+            break
         if new_height == last_height:
             stable_count += 1
             if stable_count >= 3:
