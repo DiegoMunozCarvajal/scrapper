@@ -80,17 +80,17 @@ class RamaSpider(scrapy.Spider):
 
         page_obj.on("response", _on_response)
 
+        total_yielded = 0
+        seen = set()
+        page_num = 0
+        max_pages = min(limit * 2, 200)
+        download_tasks = []
+
         try:
             await page_obj.locator('input[name="searchForm:temaInput"]').fill(query)
-            await page_obj.locator("#searchForm\\:searchButton").click()
             _search_clicked = True
+            await page_obj.locator("#searchForm\\:searchButton").click()
             await page_obj.wait_for_timeout(15000)
-
-            total_yielded = 0
-            seen = set()
-            page_num = 0
-            max_pages = min(limit * 2, 200)
-            download_tasks = []
 
             while total_yielded < limit and page_num < max_pages:
                 xml_text = None
