@@ -435,6 +435,37 @@ class RedditSpider(scrapy.Spider):
             )
             yield self._build_json_request(after=after_fullname, count=count)
 
+    def _make_post_item(self, title, url, author="", content="", score=0,
+                        comment_count=0, published_at=None, thumbnail="",
+                        link_flair="", domain="", nsfw=False, is_self_post=False,
+                        permalink="", query=None, strategy="unknown",
+                        subreddit="", post_id="", top_comments=None):
+        """Centralized PostItem factory for Reddit spider."""
+        return PostItem(
+            site=self.site,
+            url=url,
+            title=title.strip() if title else "",
+            author=author.strip() if author else "",
+            content=content,
+            score=score,
+            comment_count=comment_count,
+            published_at=published_at,
+            thumbnail=thumbnail or "",
+            link_flair=link_flair or "",
+            domain=domain or "",
+            nsfw=nsfw,
+            is_self_post=is_self_post,
+            permalink=permalink or "",
+            metadata={
+                "type": "detail",
+                "strategy": strategy,
+                "top_comments": top_comments or [],
+                "query": query,
+                "subreddit": subreddit,
+                "id": post_id,
+            },
+        )
+
     def _build_post_item_from_json(self, post_data, query):
         created_utc = post_data.get("created_utc", 0)
         published_at = (
@@ -449,11 +480,10 @@ class RedditSpider(scrapy.Spider):
         if published_at:
             self._track_latest_published(published_at)
 
-        return PostItem(
-            site=self.site,
+        return self._make_post_item(
+            title=post_data.get("title", ""),
             url=post_url,
-            title=post_data.get("title", "").strip(),
-            author=post_data.get("author", "").strip(),
+            author=post_data.get("author", ""),
             content=post_data.get("selftext", ""),
             score=post_data.get("score", 0),
             comment_count=post_data.get("num_comments", 0),
@@ -464,14 +494,10 @@ class RedditSpider(scrapy.Spider):
             nsfw=post_data.get("over_18", False),
             is_self_post=True,
             permalink=permalink,
-            metadata={
-                "type": "detail",
-                "strategy": "json_api",
-                "query": query,
-                "top_comments": [],
-                "subreddit": post_data.get("subreddit", ""),
-                "id": post_data.get("id", ""),
-            },
+            query=query,
+            strategy="json_api",
+            subreddit=post_data.get("subreddit", ""),
+            post_id=post_data.get("id", ""),
         )
 
     def _is_past_cutoff(self, dt_value):
@@ -650,10 +676,9 @@ class RedditSpider(scrapy.Spider):
             )
 
             scraped_count += 1
-            yield PostItem(
-                site=self.site,
+            yield self._make_post_item(
+                title=title,
                 url=post_url,
-                title=title.strip(),
                 author=author.strip() if author else "",
                 content=selftext,
                 score=item_data.get("score", 0),
@@ -665,14 +690,10 @@ class RedditSpider(scrapy.Spider):
                 nsfw=item_data.get("over_18", False),
                 is_self_post=item_data.get("is_self", False),
                 permalink=permalink or "",
-                metadata={
-                    "type": "detail",
-                    "strategy": "pullpush",
-                    "query": query,
-                    "top_comments": [],
-                    "subreddit": item_data.get("subreddit", ""),
-                    "id": item_data.get("id", ""),
-                },
+                query=query,
+                strategy="pullpush",
+                subreddit=item_data.get("subreddit", ""),
+                post_id=item_data.get("id", ""),
             )
 
         if scraped_count < limit and len(items) == page_size and min_created_utc:
@@ -1012,10 +1033,9 @@ class RedditSpider(scrapy.Spider):
                 headers=_JSON_HEADERS,
             )
         else:
-            yield PostItem(
-                site=self.site,
-                url=post_url,
+            yield self._make_post_item(
                 title=title,
+                url=post_url,
                 author=author,
                 content=json_data.get("selftext", ""),
                 score=json_data.get("score", 0),
@@ -1027,14 +1047,10 @@ class RedditSpider(scrapy.Spider):
                 nsfw=json_data.get("over_18", False),
                 is_self_post=json_data.get("is_self", False),
                 permalink=json_data.get("permalink", ""),
-                metadata={
-                    "type": "detail",
-                    "strategy": strategy,
-                    "top_comments": [],
-                    "query": response.meta.get("query"),
-                    "subreddit": subreddit_name,
-                    "id": post_id,
-                },
+                query=response.meta.get("query"),
+                strategy=strategy,
+                subreddit=subreddit_name,
+                post_id=post_id,
             )
 
     def _parse_post_from_html(self, response):
@@ -1113,29 +1129,19 @@ class RedditSpider(scrapy.Spider):
         if len(url_parts_for_id) > 1:
             post_id = url_parts_for_id[1].split("/")[0]
 
-        yield PostItem(
-            site=self.site,
+        yield self._make_post_item(
+            title=title,
             url=post_url,
-            title=title.strip(),
             author=author.strip() if author else "",
             content=content,
             score=score,
             comment_count=comment_count,
             published_at=post_time_str,
-            thumbnail="",
-            link_flair="",
-            domain="",
-            nsfw=False,
-            is_self_post=False,
-            permalink="",
-            metadata={
-                "type": "detail",
-                "strategy": response.meta.get("strategy", "unknown"),
-                "top_comments": top_comments,
-                "query": response.meta.get("query"),
-                "subreddit": subreddit_name,
-                "id": post_id,
-            },
+            query=response.meta.get("query"),
+            strategy=response.meta.get("strategy", "unknown"),
+            subreddit=subreddit_name,
+            post_id=post_id,
+            top_comments=top_comments,
         )
 
     def parse_post_page(self, response):
