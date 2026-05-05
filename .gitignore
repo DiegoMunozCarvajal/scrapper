@@ -24,3 +24,5 @@ eggs/
 graphify-out/
 items/
 crontab.txt
+build/
+sentencias/
