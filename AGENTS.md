@@ -40,6 +40,26 @@ scrapy crawl generic -a url="https://books.toscrape.com" -a type="listing" -a li
 scrapy crawl corte -a query="libertad de expresion" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl rama -a query="sucesion" -a limit=10 -a download=1 -a download_dir=./providencias -s ROBOTSTXT_OBEY=False -o results.json
 
+# Docker — build and start all services
+docker-compose up -d --build
+
+# Docker — view logs
+docker-compose logs -f
+
+# Docker — trigger a spider via Scrapyd API
+curl -s -X POST 'http://localhost:6800/schedule.json' \
+  --data-urlencode 'project=scrapper' \
+  --data-urlencode 'spider=reddit' \
+  --data-urlencode 'query=python' \
+  --data-urlencode 'limit=5' \
+  --data-urlencode 'setting=ROBOTSTXT_OBEY=False'
+
+# Docker — check job status
+curl -s 'http://localhost:6800/listjobs.json?project=scrapper'
+
+# Docker — Scrapyd health
+curl -s http://localhost:6800/daemonstatus.json
+
 # Run with visible browser (debugging)
 HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
 
@@ -80,7 +100,7 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 - `src/scrapper/pipelines.py` — Validate → DataQuality → Dedup → Supabase upsert (with 3 retries + DropItem on failure)
 - `src/scrapper/pagination.py` — `PaginationDetector` class for detecting next-page URLs and pagination type (links/load-more/scroll) from HTML
 - `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright), UA rotation (incl. Playwright)
-- `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging)
+- `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging). **Has fallback for both old and new playwright-stealth APIs** (Linux wheels ship a different API than macOS).
 - `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else
 - `src/scrapper/llm_extractor.py` — `LLMExtractor` class (OpenAI gpt-4o-mini, JSON mode, SQLite cache) + shared `llm_fallback()` function (properly closes cache)
 - `src/scrapper/llm_cache.py` — SQLite cache with TTL expiry, thread-safe access, timezone-aware timestamps
@@ -91,9 +111,14 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 - `src/scrapper/rag_export.py` — Markdown + JSONL export pipelines for RAG/vector DBs (with OSError handling)
 - `src/scrapper/settings.py` — Scrapy settings, Playwright config, env-driven headless/human simulation toggles, LLM + curl-cffi config, loguru file rotation setup
 - `src/scrapper/utils.py` — `USER_AGENTS`, `random_user_agent()`, `ensure_dir()`, `slugify()`, `FakeFailure`
+- `setup.py` — Minimal shim for `scrapyd-deploy` compatibility (Scrapyd needs `entry_points` for spider discovery; `setup()` reads package config from `pyproject.toml`)
+- `Dockerfile` — Multi-stage-like build with `busybox-static` (non-root crond), Playwright Chromium, BuildKit cache mount, non-root `appuser` (UID 10001), healthcheck via Scrapyd API
+- `docker-compose.yml` — Single-service stack: `cap_drop: ALL`, `no-new-privileges`, `shm_size: 2gb` (Chromium), volume mounts for persistence
+- `docker-entrypoint.sh` — Graceful shutdown (SIGTERM → SIGKILL after 10s), writability checks, SQLite file bootstrap, crontab generation, Scrapyd + dashboard startup, log streaming
 - `bin/health-check.sh` — Scrapyd health monitoring script
-- `scripts/setup_supabase.sql` — DB schema with RLS policies
-- `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling
+- `scripts/setup_supabase.sql` — DB schema with RLS policies (5 tables: sites, scrape_jobs, posts, products, scraped_pages). **Run in Supabase SQL Editor to initialize.** Idempotent (`IF NOT EXISTS`).
+- `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling (uses busybox crond in Docker, not scrapyd.conf schedule)
+- `queries.json` — Cron scheduling configuration (read by `generate_schedule.py`)
 
 ## Spider Status
 

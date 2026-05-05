@@ -161,3 +161,7 @@ END $$;
 -- Add quality_issues column if missing (v0.4+)
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';
+
+-- Add image_url and category columns (v0.5+)
+ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS category TEXT;

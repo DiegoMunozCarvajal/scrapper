@@ -1,28 +1,63 @@
+# OS files
 **/.DS_Store
+Thumbs.db
+
+# Python artifacts
 **/__pycache__
-**/.venv
-**/.git
-**/.gitignore
 **/*.pyc
 **/*.pyo
+**/scrapper.egg-info
 **/.mypy_cache
 **/.pytest_cache
 **/.ruff_cache
-**/*.egg-info
 **/.coverage
+htmlcov/
+.coverage.*
+
+# Virtual environment
+**/.venv
+**/venv
+**/.envrc
+
+# Git
+**/.git
+**/.gitignore
+**/.gitattributes
+
+# Secrets & config excluded from image (provided at runtime)
+.env
+
+# Build artifacts
+build/
+dist/
+*.egg
+
+# Tests
 tests/
-*.egg-info/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
+
+# Docker (no recursive inclusion)
 Dockerfile*
 docker-compose*
-.env
-LICENSE
+
+# Docs / readme
 README.md
+LICENSE
+docs/
+
+# Runtime data (mounted as volumes)
 llm_cache.db
 *_results.json
-graphify-out/
+*results*.json
+subreddit*.json
+scrapy.log
 rag_output/
-docs/
-__pycache__
+cookies/
+eggs/
+dbs/
+logs/
+items/
+metrics/
+sentencias/
+
+# Development cruft
+graphify-out/

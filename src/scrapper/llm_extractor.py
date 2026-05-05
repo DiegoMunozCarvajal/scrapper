@@ -144,6 +144,9 @@ def llm_fallback(spider, response, item_class):
             item_data["metadata"]["strategy"] = "llm"
             item_data["metadata"]["query"] = query
             item_data.setdefault("site", site)
+            url = item_data.get("url", "")
+            if url and not url.startswith(("http://", "https://")):
+                item_data["url"] = response.urljoin(url)
             yield item_class(item_data)
     finally:
         if extractor is not None:

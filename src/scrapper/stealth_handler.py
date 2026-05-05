@@ -7,10 +7,20 @@ from typing import Optional
 
 from loguru import logger
 from playwright.async_api import BrowserContext, Page
-from playwright_stealth import StealthConfig, stealth_async
 from scrapy import Request
 from scrapy.http import HtmlResponse
 from scrapy_playwright.handler import ScrapyPlaywrightDownloadHandler
+
+# playwright-stealth v2.0.3 ships different APIs per platform wheel.
+# Try the new API (StealthConfig + stealth_async) first, fall back
+# to the old API (Stealth + apply_stealth_async).
+try:
+    from playwright_stealth import StealthConfig, stealth_async
+    _NEW_STEALTH_API = True
+except ImportError:
+    from playwright_stealth import Stealth
+    StealthConfig = Stealth  # noqa: N811
+    _NEW_STEALTH_API = False
 
 
 class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
@@ -95,7 +105,11 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
             return response
 
         try:
-            await stealth_async(page, StealthConfig())
+            if _NEW_STEALTH_API:
+                await stealth_async(page, StealthConfig())
+            else:
+                stealth = Stealth()
+                await stealth.apply_stealth_async(page)
         except Exception as e:
             logger.warning(f"Stealth async failed for {request.url}: {e}")
 

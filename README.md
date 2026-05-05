@@ -2,14 +2,14 @@
 
 Multi-site web scraper built on **Scrapy + Playwright + curl-cffi + OpenAI + Supabase**.
 
-Active spiders: Reddit, Hotmart. Deprecated: Amazon, Mercado Libre, Quora.
+Active spiders: Reddit, Hotmart, Generic, Corte Constitucional, Rama Judicial. Deprecated: Amazon, Mercado Libre, Quora.
 
 ## Quick Start
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-playwright install chromium
+python -m playwright install chromium
 ```
 
 ## Usage
@@ -82,15 +82,82 @@ scrapy list
 
 ## Docker + Scrapyd
 
+### Setup
+
 ```bash
-docker-compose up -d
+# 1. Copy and configure environment
+cp .env.example .env   # or create .env with SUPABASE_URL, SUPABASE_KEY, etc.
+
+# 2. Create required host files (prevents Docker creating directories)
+touch llm_cache.db
+
+# 3. Build and start (all services: Scrapyd + cron + dashboard)
+docker-compose up -d --build
 ```
 
-Scheduled jobs via `scrapyd.conf`:
-- Reddit: every 6 hours
-- Hotmart: 8 AM and 8 PM daily
+### What runs inside
 
-Health monitoring: `./bin/health-check.sh`
+| Service | Port | Description |
+|---------|------|-------------|
+| Scrapyd | `:6800` | Spider execution engine (JSON API) |
+| Dashboard | `:8080` | HTML metrics dashboard (generated after first crawl) |
+| Cron | — | Busybox crond (non-root), triggers spiders per `queries.json` |
+
+### Scheduling
+
+Edit `queries.json` to configure cron schedules. The entrypoint auto-generates a crontab from it on start. Spiders run via the Scrapyd API.
+
+```json
+{
+  "reddit": {
+    "schedule": "*/30 * * * *",
+    "queries": [
+      { "query": "python", "limit": 10 }
+    ]
+  },
+  "generic": {
+    "schedule": "0 */6 * * *",
+    "tasks": [
+      { "url": "https://books.toscrape.com", "type": "listing" }
+    ]
+  }
+}
+```
+
+### Trigger a spider manually
+
+```bash
+curl -s -X POST 'http://localhost:6800/schedule.json' \
+  --data-urlencode 'project=scrapper' \
+  --data-urlencode 'spider=reddit' \
+  --data-urlencode 'query=python' \
+  --data-urlencode 'limit=5' \
+  --data-urlencode 'setting=ROBOTSTXT_OBEY=False'
+```
+
+### Health monitoring
+
+```bash
+curl -s http://localhost:6800/daemonstatus.json     # Scrapyd status
+curl -s 'http://localhost:6800/listjobs.json?project=scrapper'  # Job list
+./bin/health-check.sh                               # Scrapyd health script
+```
+
+### Volumes
+
+| Host path | Container path | Purpose |
+|-----------|---------------|---------|
+| `./logs/` | `/app/logs` | Spider + cron logs |
+| `./items/` | `/app/items` | Scraped data exports |
+| `./eggs/` | `/app/eggs` | Scrapyd project eggs |
+| `./queries.json` | `/app/queries.json` | Cron schedule config |
+| `./llm_cache.db` | `/app/llm_cache.db` | LLM extraction cache |
+
+### Cross-platform notes
+
+- Works on macOS, Linux, and Windows (Docker Desktop).
+- **Linux only**: bind-mount volumes are owned by UID 10001. If permissions fail, run `chown -R 10001:10001 .` in the project root.
+- Chromium sandbox requires `shm_size: 2gb` (set in `docker-compose.yml`).
 
 ## Tests
 

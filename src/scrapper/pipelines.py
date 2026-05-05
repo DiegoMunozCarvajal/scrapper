@@ -190,6 +190,6 @@ class SupabasePipeline:
 
     def close_spider(self):
         try:
-            self.client.postgrest.session.aclose()
+            self.client.postgrest.session.close()
         except Exception:
             pass
