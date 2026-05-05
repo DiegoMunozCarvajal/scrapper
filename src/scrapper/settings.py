@@ -62,7 +62,7 @@ LLM_CACHE_PATH = os.getenv("LLM_CACHE_PATH", "llm_cache.db")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # ── Reddit spider ────────────────────────────
-REDDIT_RSS_ENABLED = os.getenv("REDDIT_RSS_ENABLED", "false").lower() in ("true", "1", "yes")
+REDDIT_RSS_ENABLED = os.getenv("REDDIT_RSS_ENABLED", "true").lower() in ("true", "1", "yes")
 
 ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,

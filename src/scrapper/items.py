@@ -11,6 +11,12 @@ class PostItem(scrapy.Item):
     score = scrapy.Field(default=0)
     comment_count = scrapy.Field(default=0)
     published_at = scrapy.Field()
+    thumbnail = scrapy.Field()
+    link_flair = scrapy.Field()
+    domain = scrapy.Field()
+    nsfw = scrapy.Field(default=False)
+    is_self_post = scrapy.Field(default=False)
+    permalink = scrapy.Field()
     metadata = scrapy.Field(default={})
     quality_issues = scrapy.Field()
     scraped_at = scrapy.Field()
@@ -19,7 +25,15 @@ class PostItem(scrapy.Item):
         try:
             return super().__getitem__(key)
         except KeyError:
-            defaults = {"content": "", "score": 0, "comment_count": 0, "metadata": {}, "quality_issues": []}
+            defaults = {
+                "content": "",
+                "score": 0,
+                "comment_count": 0,
+                "metadata": {},
+                "quality_issues": [],
+                "nsfw": False,
+                "is_self_post": False,
+            }
             if key in defaults:
                 return defaults[key]
             raise

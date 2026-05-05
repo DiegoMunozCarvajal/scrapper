@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
 
+import feedparser
 import portalocker
 import scrapy
 from dateutil import parser as date_parser
@@ -23,6 +24,11 @@ _SEARCH_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+_JSON_HEADERS = {
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 _PULLPUSH_HEADERS = {
     "Accept": "application/json",
     "Accept-Language": "en-US,en;q=0.9",
@@ -30,10 +36,7 @@ _PULLPUSH_HEADERS = {
 
 _PULLPUSH_BASE = "https://api.pullpush.io/reddit/search/submission/"
 
-try:
-    import feedparser
-except ImportError:
-    feedparser = None
+_REDDIT_JSON_LIMIT = 100
 
 
 class RedditSpider(scrapy.Spider):
@@ -49,11 +52,25 @@ class RedditSpider(scrapy.Spider):
         self._latest_published = None
         self._cutoff_cache_path = None
         self.subreddit = getattr(self, "subreddit", None)
+        self.query = getattr(self, "query", None)
+        self.sort = getattr(self, "sort", "new")
+        self.time_filter = getattr(self, "time_filter", None)
+        self.nsfw = getattr(self, "nsfw", "include")
+        self.include_comments = getattr(self, "include_comments", False)
+        if not self.query:
+            if self.subreddit:
+                self._has_query = False
+            else:
+                self.query = "python"
+                self._has_query = True
+        else:
+            self._has_query = True
 
     @property
     def _cache_key(self):
-        query = getattr(self, "query", "python")
-        return f"{self.subreddit}:{query}" if self.subreddit else query
+        if self._has_query:
+            return f"{self.subreddit}:{self.query}" if self.subreddit else self.query
+        return f"{self.subreddit}:sort={self.sort}"
 
     async def _load_cutoff_date(self):
         supabase_url = self.settings.get("SUPABASE_URL")
@@ -67,8 +84,9 @@ class RedditSpider(scrapy.Spider):
                     client.table("posts")
                     .select("scraped_at")
                     .eq("site", "reddit")
-                    .eq("metadata->>'query'", getattr(self, "query", "python"))
                 )
+                if self._has_query:
+                    q = q.eq("metadata->>'query'", self.query)
                 if self.subreddit:
                     q = q.eq("metadata->>'subreddit'", self.subreddit)
                 result = await (
@@ -85,8 +103,11 @@ class RedditSpider(scrapy.Spider):
                 if client:
                     try:
                         await client.postgrest.aclose()
-                    except Exception:
-                        pass
+                    except (AttributeError, Exception):
+                        try:
+                            client.postgrest.session.close()
+                        except Exception:
+                            pass
 
         if not self.cutoff_date:
             self._load_local_cutoff_date()
@@ -172,19 +193,25 @@ class RedditSpider(scrapy.Spider):
         self._save_cutoff_cache()
 
     def _build_rss_request(self):
-        query = getattr(self, "query", "python")
-        limit = int(getattr(self, "limit", 10))
-        time_filter = self._calculate_time_filter()
-        if self.subreddit:
-            rss_url = (
-                f"https://www.reddit.com/r/{self.subreddit}/search.rss"
-                f"?q={quote_plus(query)}&restrict_sr=on&sort=new&t={time_filter}&limit={limit}"
-            )
+        query = self.query if self._has_query else None
+        limit = min(int(getattr(self, "limit", 25)), _REDDIT_JSON_LIMIT)
+        time_filter = self.time_filter or self._calculate_time_filter()
+        if self._has_query:
+            if self.subreddit:
+                rss_url = (
+                    f"https://www.reddit.com/r/{self.subreddit}/search.rss"
+                    f"?q={quote_plus(query)}&restrict_sr=on&sort=new&t={time_filter}&limit={limit}"
+                )
+            else:
+                rss_url = (
+                    f"https://www.reddit.com/search.rss"
+                    f"?q={quote_plus(query)}&sort=new&t={time_filter}&limit={limit}"
+                )
         else:
-            rss_url = (
-                f"https://www.reddit.com/search.rss"
-                f"?q={quote_plus(query)}&sort=new&t={time_filter}&limit={limit}"
-            )
+            if self.sort == "new":
+                rss_url = f"https://www.reddit.com/r/{self.subreddit}/new.rss?sort=new&limit={limit}"
+            else:
+                rss_url = f"https://www.reddit.com/r/{self.subreddit}.rss?limit={limit}"
         return scrapy.Request(
             rss_url,
             callback=self.parse_rss,
@@ -213,7 +240,7 @@ class RedditSpider(scrapy.Spider):
             )
             yield self._build_pullpush_request(date_from=date_from, date_to=date_to)
         else:
-            yield self._build_json_precheck_request()
+            yield self._build_json_request()
 
     def _health_check(self, response):
         self.logger.info("Health check: old.reddit.com is reachable")
@@ -223,122 +250,259 @@ class RedditSpider(scrapy.Spider):
             f"Health check failed: old.reddit.com unreachable ({failure.value})"
         )
 
-    def _build_json_precheck_request(self):
-        query = getattr(self, "query", "python")
-        time_filter = self._calculate_time_filter()
-        if self.subreddit:
-            url = (
-                f"https://old.reddit.com/r/{self.subreddit}/search.json"
-                f"?q={quote_plus(query)}"
-                f"&sort=new"
-                f"&type=link"
-                f"&restrict_sr=on"
-                f"&t={time_filter}"
-                f"&limit=5"
-            )
+    def _build_json_request(self, after=None, count=0):
+        query = self.query if self._has_query else None
+        limit = min(int(getattr(self, "limit", 25)), _REDDIT_JSON_LIMIT)
+        time_filter = self.time_filter or self._calculate_time_filter()
+        sort = self.sort
+
+        if self._has_query:
+            if self.subreddit:
+                url = (
+                    f"https://old.reddit.com/r/{self.subreddit}/search.json"
+                    f"?q={quote_plus(query)}"
+                    f"&sort={sort}"
+                    f"&type=link"
+                    f"&restrict_sr=on"
+                    f"&t={time_filter}"
+                    f"&raw_json=1"
+                    f"&limit={limit}"
+                )
+            else:
+                url = (
+                    f"https://old.reddit.com/search.json"
+                    f"?q={quote_plus(query)}"
+                    f"&sort={sort}"
+                    f"&type=link"
+                    f"&restrict_sr=off"
+                    f"&t={time_filter}"
+                    f"&raw_json=1"
+                    f"&limit={limit}"
+                )
         else:
+            valid_sorts = ("new", "hot", "top", "rising", "controversial")
+            if sort not in valid_sorts:
+                sort = "new"
             url = (
-                f"https://old.reddit.com/search.json"
-                f"?q={quote_plus(query)}"
-                f"&sort=new"
-                f"&type=link"
-                f"&restrict_sr=off"
+                f"https://old.reddit.com/r/{self.subreddit}/{sort}.json"
+                f"?raw_json=1"
+                f"&limit={limit}"
                 f"&t={time_filter}"
-                f"&limit=5"
             )
+
+        if after:
+            url += f"&after={after}"
+        if count:
+            url += f"&count={count}"
+
         return scrapy.Request(
             url,
-            callback=self.parse_json_precheck,
-            errback=self._json_precheck_error,
-            headers=_SEARCH_HEADERS,
+            callback=self.parse_json_results,
+            errback=self._json_request_error,
+            meta={
+                "query": query,
+                "limit": limit,
+                "count": count,
+                "strategy": "json_api",
+            },
+            headers=_JSON_HEADERS,
         )
 
-    def parse_json_precheck(self, response):
+    def parse_json_results(self, response):
         try:
             data = json.loads(response.text)
         except (json.JSONDecodeError, ValueError):
             self.logger.warning(
-                "JSON precheck: invalid JSON response, falling through to full search"
+                "JSON API: invalid JSON response, falling through to fallback"
             )
             yield self._continue_to_full_search()
             return
 
-        posts = data.get("data", {}).get("children", [])
-        posts = [p for p in posts if p.get("kind") == "t3"]
+        children = data.get("data", {}).get("children", [])
+        posts = [p for p in children if p.get("kind") == "t3"]
 
         if not posts:
-            self.logger.info("JSON precheck: no posts found, skipping full scrape")
+            self.logger.info("JSON API: no posts found")
             return
 
-        has_new = self._check_json_posts_for_new_content(posts)
-        if has_new:
-            self.logger.info(
-                "JSON precheck: new content found, proceeding with full search"
-            )
-            yield self._continue_to_full_search()
-        else:
-            newest_ts = posts[0]["data"].get("created_utc", 0)
-            if newest_ts:
-                newest_date = datetime.fromtimestamp(newest_ts, tz=timezone.utc).isoformat()
-                self.logger.info(
-                    f"JSON precheck: no new content since cutoff. "
-                    f"Newest post from {newest_date}"
-                )
-            else:
-                self.logger.info("JSON precheck: no new content since cutoff")
+        query = response.meta["query"]
+        limit = response.meta["limit"]
+        count = response.meta["count"]
+        start_count = count
 
-    def _check_json_posts_for_new_content(self, posts):
+        cutoff_ts = self._get_cutoff_timestamp()
+        skipped_old = 0
+
+        for post in posts:
+            if count >= limit:
+                break
+
+            post_data = post["data"]
+            title = (post_data.get("title", "") or "").strip()
+            permalink = post_data.get("permalink", "")
+
+            if not title or not permalink:
+                continue
+
+            if title in ("[removed]", "[deleted]") or \
+               post_data.get("author", "") in ("[deleted]",):
+                continue
+
+            if self.nsfw == "exclude" and post_data.get("over_18"):
+                continue
+            if self.nsfw == "only" and not post_data.get("over_18"):
+                continue
+
+            created_utc = post_data.get("created_utc", 0)
+            if cutoff_ts is not None and created_utc:
+                if created_utc <= cutoff_ts:
+                    skipped_old += 1
+                    continue
+
+            count += 1
+            is_self = post_data.get("is_self", False)
+
+            post_url = (
+                f"https://old.reddit.com{permalink}"
+                if permalink.startswith("/")
+                else permalink
+            )
+
+            if is_self and not self.include_comments:
+                yield self._build_post_item_from_json(post_data, query)
+            else:
+                yield response.follow(
+                    post_url,
+                    callback=self.parse_post_page,
+                    errback=self._handle_post_error,
+                    meta={
+                        "query": query,
+                        "limit": limit,
+                        "strategy": "json_api",
+                        "_json_data": post_data,
+                    },
+                    headers=_SEARCH_HEADERS,
+                )
+
+        if count == start_count and skipped_old == 0:
+            self.logger.warning(
+                "JSON API: no usable posts, falling through to HTML search"
+            )
+            yield self._build_html_search_request()
+            return
+
+        if count == start_count and skipped_old > 0:
+            if self.sort == "new":
+                self.logger.info(
+                    f"JSON API: all {skipped_old} posts older than cutoff, stopping"
+                )
+                return
+            self.logger.info(
+                f"JSON API: all {skipped_old} posts on page older than cutoff, "
+                f"but sort={self.sort} — continuing pagination"
+            )
+
+        after_fullname = data.get("data", {}).get("after")
+        if count < limit and after_fullname:
+            self.logger.info(
+                f"JSON API: page done ({count}/{limit}), fetching next page"
+            )
+            yield self._build_json_request(after=after_fullname, count=count)
+
+    def _build_post_item_from_json(self, post_data, query):
+        created_utc = post_data.get("created_utc", 0)
+        published_at = (
+            datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
+            if created_utc
+            else None
+        )
+
+        permalink = post_data.get("permalink", "")
+        post_url = (
+            f"https://old.reddit.com{permalink}"
+            if permalink.startswith("/")
+            else permalink
+        )
+
+        if published_at:
+            self._track_latest_published(published_at)
+
+        return PostItem(
+            site=self.site,
+            url=post_url,
+            title=post_data.get("title", "").strip(),
+            author=post_data.get("author", "").strip(),
+            content=post_data.get("selftext", ""),
+            score=post_data.get("score", 0),
+            comment_count=post_data.get("num_comments", 0),
+            published_at=published_at,
+            thumbnail=post_data.get("thumbnail", ""),
+            link_flair=post_data.get("link_flair_text", ""),
+            domain=post_data.get("domain", ""),
+            nsfw=post_data.get("over_18", False),
+            is_self_post=True,
+            permalink=permalink,
+            metadata={
+                "type": "detail",
+                "strategy": "json_api",
+                "query": query,
+                "top_comments": [],
+                "subreddit": post_data.get("subreddit", ""),
+                "id": post_data.get("id", ""),
+            },
+        )
+
+    def _get_cutoff_timestamp(self):
         if not self.cutoff_date:
-            return True
+            return None
         try:
             cutoff = date_parser.parse(self.cutoff_date)
             if cutoff.tzinfo is None:
                 cutoff = cutoff.replace(tzinfo=timezone.utc)
-            cutoff_ts = cutoff.timestamp()
+            return cutoff.timestamp()
         except Exception:
-            return True
+            return None
 
-        for post in posts:
-            created_utc = post["data"].get("created_utc", 0)
-            if created_utc > cutoff_ts:
-                return True
-        return False
-
-    def _json_precheck_error(self, failure):
+    def _json_request_error(self, failure):
         self.logger.warning(
-            f"JSON precheck request failed ({failure.value}), "
-            "falling through to full search"
+            f"JSON request failed ({failure.value}), falling through to full search"
         )
         yield self._continue_to_full_search()
 
     def _continue_to_full_search(self):
-        rss_enabled = self.settings.getbool("REDDIT_RSS_ENABLED", False)
+        rss_enabled = self.settings.getbool("REDDIT_RSS_ENABLED", True)
         if rss_enabled:
             return self._build_rss_request()
         return self._build_html_search_request()
 
     def _build_html_search_request(self, query=None, limit=None):
-        query = query or getattr(self, "query", "python")
+        query = query if query is not None else self.query
         limit = limit or int(getattr(self, "limit", 10))
         time_filter = self._calculate_time_filter()
-        if self.subreddit:
-            url = (
-                f"https://old.reddit.com/r/{self.subreddit}/search"
-                f"?q={quote_plus(query)}"
-                f"&sort=new"
-                f"&type=link"
-                f"&restrict_sr=on"
-                f"&t={time_filter}"
-            )
+        if self._has_query:
+            if self.subreddit:
+                url = (
+                    f"https://old.reddit.com/r/{self.subreddit}/search"
+                    f"?q={quote_plus(query)}"
+                    f"&sort=new"
+                    f"&type=link"
+                    f"&restrict_sr=on"
+                    f"&t={time_filter}"
+                )
+            else:
+                url = (
+                    f"https://old.reddit.com/search"
+                    f"?q={quote_plus(query)}"
+                    f"&sort=new"
+                    f"&type=link"
+                    f"&restrict_sr=off"
+                    f"&t={time_filter}"
+                )
         else:
-            url = (
-                f"https://old.reddit.com/search"
-                f"?q={quote_plus(query)}"
-                f"&sort=new"
-                f"&type=link"
-                f"&restrict_sr=off"
-                f"&t={time_filter}"
-            )
+            if self.sort == "new":
+                url = f"https://old.reddit.com/r/{self.subreddit}/new?sort=new"
+            else:
+                url = f"https://old.reddit.com/r/{self.subreddit}/"
         return scrapy.Request(
             url,
             callback=self.parse,
@@ -352,8 +516,8 @@ class RedditSpider(scrapy.Spider):
 
     def _fallback_to_search(self, failure):
         yield self._build_html_search_request(
-            query=failure.request.meta["query"],
-            limit=failure.request.meta["limit"],
+            query=failure.request.meta.get("query", self.query),
+            limit=failure.request.meta.get("limit", int(getattr(self, "limit", 10))),
         )
 
     def _date_str_to_epoch(self, date_str, end_of_day=False):
@@ -370,17 +534,18 @@ class RedditSpider(scrapy.Spider):
     def _build_pullpush_request(
         self, date_from=None, date_to=None, before=None, page=1, scraped_count=0
     ):
-        query = getattr(self, "query", "python")
+        query = self.query if self._has_query else None
         limit = int(getattr(self, "limit", 25))
         size = min(limit, 100)
 
         params = {
-            "q": query,
             "size": size,
             "sort": "desc",
             "sort_type": "created_utc",
         }
 
+        if self._has_query:
+            params["q"] = self.query
         if self.subreddit:
             params["subreddit"] = self.subreddit
 
@@ -470,16 +635,22 @@ class RedditSpider(scrapy.Spider):
                 site=self.site,
                 url=post_url,
                 title=title.strip(),
-                author=author,
+                author=author.strip() if author else "",
                 content=selftext,
                 score=item_data.get("score", 0),
                 comment_count=item_data.get("num_comments", 0),
                 published_at=published_at,
+                thumbnail=item_data.get("thumbnail", "") or "",
+                link_flair=item_data.get("link_flair_text", "") or "",
+                domain=item_data.get("domain", "") or "",
+                nsfw=item_data.get("over_18", False),
+                is_self_post=item_data.get("is_self", False),
+                permalink=permalink or "",
                 metadata={
                     "type": "detail",
                     "strategy": "pullpush",
                     "query": query,
-                    "top_comment": "",
+                    "top_comments": [],
                     "subreddit": item_data.get("subreddit", ""),
                     "id": item_data.get("id", ""),
                 },
@@ -508,19 +679,11 @@ class RedditSpider(scrapy.Spider):
     def _handle_pullpush_error(self, failure):
         self.logger.warning(
             f"PullPush request failed ({failure.value}), "
-            "falling back to Reddit native search (no date filter)"
+            "falling back to Reddit native scraper (no date filter)"
         )
         yield self._build_html_search_request()
 
     def parse_rss(self, response):
-        if feedparser is None:
-            self.logger.error("feedparser not installed, falling back to HTML search")
-            yield self._build_html_search_request(
-                query=response.meta["query"],
-                limit=response.meta["limit"],
-            )
-            return
-
         query = response.meta["query"]
         limit = response.meta["limit"]
 
@@ -579,16 +742,20 @@ class RedditSpider(scrapy.Spider):
             )
 
     def parse(self, response):
-        """Fallback: old.reddit.com search results (Strategy 2)."""
-        query = response.meta["query"]
+        """Fallback: old.reddit.com search results or subreddit listing (Strategy 2)."""
+        query = response.meta.get("query")
         limit = response.meta["limit"]
         count = response.meta["count"]
         start_count = count
 
-        cards = response.css("div.search-result-link")
+        if self._has_query:
+            cards = response.css("div.search-result-link")
+        else:
+            cards = response.css("#siteTable div.thing[data-type='link']:not(.stickied)")
+
         if not cards:
             self.logger.warning(
-                "CSS selectors found no search-result-link cards "
+                "CSS selectors found no results "
                 "(HTML structure may have changed), trying LLM fallback"
             )
             yield from llm_fallback(self, response, PostItem)
@@ -601,7 +768,10 @@ class RedditSpider(scrapy.Spider):
             if count >= limit:
                 break
 
-            title_el = card.css("a.search-title")
+            if self._has_query:
+                title_el = card.css("a.search-title")
+            else:
+                title_el = card.css("a.title")
             title = title_el.css("::text").get("")
             href = title_el.css("::attr(href)").get("")
 
@@ -633,11 +803,11 @@ class RedditSpider(scrapy.Spider):
         if count == start_count:
             if cards_with_time > 0 and cards_with_time == cards_skipped_old:
                 self.logger.info(
-                    f"All {cards_with_time} dated search results older than cutoff, stopping"
+                    f"All {cards_with_time} dated results older than cutoff, stopping"
                 )
             elif cards_with_time == 0 and len(cards) > 0:
                 self.logger.warning(
-                    "No <time> tags found in search results, "
+                    "No <time> tags found in results, "
                     "HTML structure may have changed, trying LLM fallback"
                 )
                 yield from llm_fallback(self, response, PostItem)
@@ -658,6 +828,70 @@ class RedditSpider(scrapy.Spider):
                     meta={"query": query, "limit": limit, "count": count},
                     headers=_SEARCH_HEADERS,
                 )
+
+    def _finalize_post_fields(self, post_fields, top_comments):
+        """Extract internal meta keys, build metadata, return clean PostItem."""
+        query_val = post_fields.pop("_query", None)
+        subreddit_val = post_fields.pop("_subreddit", "")
+        strategy_val = post_fields.pop("_strategy", "json_api")
+        post_id_val = post_fields.pop("_post_id", "")
+        post_fields["metadata"] = {
+            "type": "detail",
+            "strategy": strategy_val,
+            "top_comments": top_comments,
+            "query": query_val,
+            "subreddit": subreddit_val,
+            "id": post_id_val,
+        }
+        return PostItem(post_fields)
+
+    def parse_comments_json(self, response):
+        """Extract top comments from /comments/{id}.json and yield combined PostItem."""
+        post_fields = dict(response.meta.get("_post_fields", {}))
+        if not post_fields:
+            self.logger.warning("Comments: missing _post_fields in meta, skipping")
+            return
+
+        try:
+            data = json.loads(response.text)
+        except (json.JSONDecodeError, ValueError):
+            self.logger.warning(f"Comments JSON: invalid response for {post_fields.get('url')}")
+            yield self._finalize_post_fields(post_fields, [])
+            return
+
+        if isinstance(data, list):
+            if len(data) > 1:
+                comment_listing = data[1]
+            elif len(data) == 1:
+                comment_listing = data[0]
+            else:
+                comment_listing = {}
+        else:
+            comment_listing = data
+
+        children = comment_listing.get("data", {}).get("children", [])
+        top_comments = []
+        for c in children[:5]:
+            if c.get("kind") != "t1":
+                continue
+            cd = c.get("data", {})
+            if not cd.get("body"):
+                continue
+            top_comments.append({
+                "author": cd.get("author", ""),
+                "score": cd.get("score", 0),
+                "body": cd.get("body", ""),
+            })
+
+        yield self._finalize_post_fields(post_fields, top_comments)
+
+    def _handle_comments_error(self, failure):
+        post_fields = failure.request.meta.get("_post_fields", {})
+        if post_fields:
+            post_fields = dict(post_fields)
+            yield self._finalize_post_fields(post_fields, [])
+        else:
+            self.logger.debug(f"Comments request failed: {failure.value}")
 
     def _handle_post_error(self, failure):
         if failure.check(HttpError):
@@ -712,6 +946,108 @@ class RedditSpider(scrapy.Spider):
 
     def parse_post_page(self, response):
         """Extract full post content from detail page."""
+        json_data = response.meta.get("_json_data", {})
+        strategy = response.meta.get("strategy", "unknown")
+
+        if json_data:
+            created_utc = json_data.get("created_utc", 0)
+            if created_utc and self.cutoff_date:
+                try:
+                    cutoff = date_parser.parse(self.cutoff_date)
+                    if cutoff.tzinfo is None:
+                        cutoff = cutoff.replace(tzinfo=timezone.utc)
+                    if created_utc <= cutoff.timestamp():
+                        self.logger.info(
+                            f"Stopping: post older than cutoff {self.cutoff_date}"
+                        )
+                        return
+                except Exception:
+                    pass
+
+            author = json_data.get("author", "").strip()
+            if author in ("[deleted]",):
+                self.logger.info(f"Skipping removed/deleted post: {response.url}")
+                return
+
+            title = json_data.get("title", "").strip()
+            post_url = response.url
+            if post_url.startswith("//"):
+                post_url = f"https:{post_url}"
+            elif not post_url.startswith("http"):
+                post_url = f"https://old.reddit.com{post_url}"
+
+            if not post_url or not title:
+                self.logger.warning(f"Skipping post with no URL/title: {post_url}")
+                return
+
+            published_at = None
+            if created_utc:
+                published_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
+                self._track_latest_published(published_at)
+
+            subreddit_name = json_data.get("subreddit", "")
+            post_id = json_data.get("id", "")
+            num_comments = json_data.get("num_comments", 0)
+
+            if self.include_comments and post_id and num_comments > 0:
+                comments_url = (
+                    f"https://old.reddit.com/comments/{post_id}.json"
+                    f"?limit=5&raw_json=1"
+                )
+                post_fields = {
+                    "site": self.site,
+                    "url": post_url,
+                    "title": title,
+                    "author": author,
+                    "content": json_data.get("selftext", ""),
+                    "score": json_data.get("score", 0),
+                    "comment_count": num_comments,
+                    "published_at": published_at,
+                    "thumbnail": json_data.get("thumbnail", ""),
+                    "link_flair": json_data.get("link_flair_text", ""),
+                    "domain": json_data.get("domain", ""),
+                    "nsfw": json_data.get("over_18", False),
+                    "is_self_post": json_data.get("is_self", False),
+                    "permalink": json_data.get("permalink", ""),
+                    "_query": response.meta.get("query"),
+                    "_subreddit": subreddit_name,
+                    "_strategy": strategy,
+                    "_post_id": post_id,
+                }
+                yield scrapy.Request(
+                    comments_url,
+                    callback=self.parse_comments_json,
+                    errback=self._handle_comments_error,
+                    meta={"_post_fields": post_fields},
+                    headers=_JSON_HEADERS,
+                )
+            else:
+                yield PostItem(
+                    site=self.site,
+                    url=post_url,
+                    title=title,
+                    author=author,
+                    content=json_data.get("selftext", ""),
+                    score=json_data.get("score", 0),
+                    comment_count=num_comments,
+                    published_at=published_at,
+                    thumbnail=json_data.get("thumbnail", ""),
+                    link_flair=json_data.get("link_flair_text", ""),
+                    domain=json_data.get("domain", ""),
+                    nsfw=json_data.get("over_18", False),
+                    is_self_post=json_data.get("is_self", False),
+                    permalink=json_data.get("permalink", ""),
+                    metadata={
+                        "type": "detail",
+                        "strategy": strategy,
+                        "top_comments": [],
+                        "query": response.meta.get("query"),
+                        "subreddit": subreddit_name,
+                        "id": post_id,
+                    },
+                )
+            return
+
         post_time_str = response.css("time::attr(datetime)").get()
         if post_time_str and self.cutoff_date:
             try:
@@ -795,6 +1131,13 @@ class RedditSpider(scrapy.Spider):
         if len(url_parts) > 1:
             subreddit_name = url_parts[1].split("/")[0]
 
+        top_comments = [{"author": "", "body": top_comment[:500], "score": 0}] if top_comment else []
+
+        post_id = ""
+        url_parts_for_id = post_url.rstrip("/").split("/comments/")
+        if len(url_parts_for_id) > 1:
+            post_id = url_parts_for_id[1].split("/")[0]
+
         yield PostItem(
             site=self.site,
             url=post_url,
@@ -804,11 +1147,18 @@ class RedditSpider(scrapy.Spider):
             score=score,
             comment_count=comment_count,
             published_at=post_time_str,
+            thumbnail="",
+            link_flair="",
+            domain="",
+            nsfw=False,
+            is_self_post=False,
+            permalink="",
             metadata={
                 "type": "detail",
                 "strategy": response.meta.get("strategy", "unknown"),
-                "top_comment": top_comment[:500],
+                "top_comments": top_comments,
                 "query": response.meta.get("query"),
                 "subreddit": subreddit_name,
+                "id": post_id,
             },
         )

@@ -1,0 +1,152 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_abc124",
+    "before": null,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Is Python fast enough for backends in 2026?",
+          "url": "https://old.reddit.com/r/Python/comments/abc123/is_python_fast_enough/",
+          "author": "u_pythonista",
+          "score": 245,
+          "num_comments": 67,
+          "created_utc": 1746403200.0,
+          "selftext": "I've been using Python for years but wondering if it can handle 10k req/s without async frameworks. What do you all think?",
+          "selftext_html": "&lt;div class=\"md\"&gt;&lt;p&gt;I&apos;ve been using Python for years...&lt;/p&gt;&lt;/div&gt;",
+          "thumbnail": "self",
+          "link_flair_text": "Discussion",
+          "domain": "self.Python",
+          "over_18": false,
+          "is_self": true,
+          "permalink": "/r/Python/comments/abc123/is_python_fast_enough/",
+          "subreddit": "Python",
+          "subreddit_id": "t5_2qh3y",
+          "stickied": false,
+          "distinguished": null,
+          "edited": false,
+          "locked": false,
+          "id": "abc123",
+          "name": "t3_abc123"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Show HN: My new framework beats Next.js and Remix",
+          "url": "https://github.com/demo/awesome-framework",
+          "author": "u_webdev99",
+          "score": 89,
+          "num_comments": 34,
+          "created_utc": 1746316800.0,
+          "selftext": "",
+          "selftext_html": null,
+          "thumbnail": "default",
+          "link_flair_text": "Showcase",
+          "domain": "github.com",
+          "over_18": false,
+          "is_self": false,
+          "permalink": "/r/programming/comments/def456/new_framework/",
+          "subreddit": "programming",
+          "subreddit_id": "t5_2qh3a",
+          "stickied": false,
+          "distinguished": null,
+          "edited": false,
+          "locked": false,
+          "id": "def456",
+          "name": "t3_def456"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "NSFW: Adult content discussion thread",
+          "url": "https://old.reddit.com/r/adults/comments/ghi789/nsfw_discussion/",
+          "author": "u_adultuser",
+          "score": 12,
+          "num_comments": 8,
+          "created_utc": 1746230400.0,
+          "selftext": "Discussion about adult content topics.",
+          "selftext_html": "&lt;div class=\"md\"&gt;&lt;p&gt;Discussion...&lt;/p&gt;&lt;/div&gt;",
+          "thumbnail": "nsfw",
+          "link_flair_text": "NSFW",
+          "domain": "self.adults",
+          "over_18": true,
+          "is_self": true,
+          "permalink": "/r/adults/comments/ghi789/nsfw_discussion/",
+          "subreddit": "adults",
+          "subreddit_id": "t5_2qh1b",
+          "stickied": false,
+          "distinguished": null,
+          "edited": false,
+          "locked": false,
+          "id": "ghi789",
+          "name": "t3_ghi789"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "[removed]",
+          "url": "https://old.reddit.com/r/Python/comments/removed1/removed/",
+          "author": "[deleted]",
+          "score": 0,
+          "num_comments": 0,
+          "created_utc": 1746144000.0,
+          "selftext": "[removed]",
+          "selftext_html": null,
+          "thumbnail": "default",
+          "link_flair_text": null,
+          "domain": "self.Python",
+          "over_18": false,
+          "is_self": true,
+          "permalink": "/r/Python/comments/removed1/removed/",
+          "subreddit": "Python",
+          "subreddit_id": "t5_2qh3y",
+          "stickied": false,
+          "distinguished": null,
+          "edited": false,
+          "locked": false,
+          "id": "removed1",
+          "name": "t3_removed1"
+        }
+      },
+      {
+        "kind": "t1",
+        "data": {
+          "body": "This is a comment that should be skipped because it's t1",
+          "id": "skipthis",
+          "name": "t1_skipthis"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "",
+          "url": "",
+          "author": "",
+          "score": 0,
+          "num_comments": 0,
+          "created_utc": 0,
+          "selftext": "",
+          "selftext_html": null,
+          "thumbnail": "default",
+          "link_flair_text": null,
+          "domain": "",
+          "over_18": false,
+          "is_self": true,
+          "permalink": "",
+          "subreddit": "",
+          "subreddit_id": "",
+          "stickied": false,
+          "distinguished": null,
+          "edited": false,
+          "locked": false,
+          "id": "notitle",
+          "name": "t3_notitle"
+        }
+      }
+    ]
+  }
+}

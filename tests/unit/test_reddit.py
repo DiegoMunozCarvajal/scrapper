@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import scrapy
+from dateutil import parser as date_parser
 from scrapy.http import HtmlResponse
 
+from scrapper.items import PostItem
 from scrapper.spiders.reddit import RedditSpider
 
 
@@ -13,6 +15,8 @@ class TestRedditSpider:
         with patch.object(RedditSpider, "_load_cutoff_date", return_value=None):
             spider = RedditSpider()
         spider.cutoff_date = None
+        spider.settings = MagicMock()
+        spider.settings.getbool.return_value = False
         return spider
 
     def _make_response(self, body, url="https://old.reddit.com/r/test/comments/abc/test_post/"):
@@ -58,6 +62,7 @@ class TestRedditSpider:
         assert item["author"] == "u_testuser"
         assert item["published_at"] == "2026-04-15T10:30:00Z"
         assert item["metadata"]["subreddit"] == "test"
+        assert isinstance(item["metadata"]["top_comments"], list)
 
     def test_parse_post_page_handles_missing_score(self):
         spider = self._make_spider()
@@ -219,40 +224,74 @@ class TestRedditSpider:
             mock_dt.timezone = timezone
             assert spider._calculate_time_filter() == "week"
 
-    def test_build_json_precheck_request(self):
+    def test_build_json_request(self):
         spider = self._make_spider()
         spider.query = "python"
-        req = spider._build_json_precheck_request()
+        spider.limit = 30
+        req = spider._build_json_request()
         assert "search.json" in req.url
         assert "python" in req.url
         assert "sort=new" in req.url
         assert "t=all" in req.url
+        assert "raw_json=1" in req.url
+        assert "limit=30" in req.url
+        assert req.meta["strategy"] == "json_api"
+        assert req.callback == spider.parse_json_results
 
-    def test_check_json_posts_for_new_content_no_cutoff(self):
+    def test_build_json_request_limit_capped(self):
+        spider = self._make_spider()
+        spider.limit = 200
+        req = spider._build_json_request()
+        assert "limit=100" in req.url
+
+    def test_build_json_request_with_after(self):
+        spider = self._make_spider()
+        spider.query = "python"
+        req = spider._build_json_request(after="t3_abc123", count=25)
+        assert "after=t3_abc123" in req.url
+        assert "count=25" in req.url
+        assert req.meta["count"] == 25
+
+    def test_build_json_request_no_query(self):
+        spider = self._make_spider()
+        spider.subreddit = "Python"
+        spider.query = None
+        spider._has_query = False
+        req = spider._build_json_request()
+        assert "old.reddit.com/r/Python/new.json" in req.url
+        assert "raw_json=1" in req.url
+
+    def test_build_json_request_with_sort(self):
+        spider = self._make_spider()
+        spider.subreddit = "Python"
+        spider.query = None
+        spider._has_query = False
+        spider.sort = "top"
+        req = spider._build_json_request()
+        assert "old.reddit.com/r/Python/top.json" in req.url
+
+    def test_build_json_request_with_time_filter(self):
+        spider = self._make_spider()
+        spider.subreddit = "Python"
+        spider.query = None
+        spider._has_query = False
+        spider.time_filter = "week"
+        req = spider._build_json_request()
+        assert "t=week" in req.url
+
+    def test_get_cutoff_timestamp_no_cutoff(self):
         spider = self._make_spider()
         spider.cutoff_date = None
-        posts = [{"data": {"created_utc": 100}}]
-        assert spider._check_json_posts_for_new_content(posts) is True
+        assert spider._get_cutoff_timestamp() is None
 
-    def test_check_json_posts_for_new_content_all_old(self):
+    def test_get_cutoff_timestamp_with_cutoff(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-04T00:00:00+00:00"
-        posts = [
-            {"data": {"created_utc": 1746326400.0}},  # May 4, 2026 00:00:00 UTC
-        ]
-        # created_utc equals cutoff, not newer
-        assert spider._check_json_posts_for_new_content(posts) is False
+        ts = spider._get_cutoff_timestamp()
+        assert ts is not None
+        assert ts > 0
 
-    def test_check_json_posts_for_new_content_has_new(self):
-        spider = self._make_spider()
-        spider.cutoff_date = "2026-05-01T00:00:00+00:00"
-        # May 6, 2026 UTC: ~1778112000
-        posts = [
-            {"data": {"created_utc": 1778112000.0}},
-        ]
-        assert spider._check_json_posts_for_new_content(posts) is True
-
-    def test_json_precheck_error_falls_back(self):
+    def test_json_request_error_falls_back(self):
         spider = self._make_spider()
         spider.query = "test"
         spider.settings = MagicMock()
@@ -261,7 +300,7 @@ class TestRedditSpider:
         from scrapy import Request
 
         failure = Failure(Exception("network error"), Request("http://test"))
-        results = list(spider._json_precheck_error(failure))
+        results = list(spider._json_request_error(failure))
         assert len(results) == 1
         assert results[0].callback == spider.parse
 
@@ -621,15 +660,17 @@ class TestRedditSpider:
         assert "restrict_sr=on" in req.url
         assert "async" in req.url
 
-    def test_build_json_precheck_request_with_subreddit(self):
+    def test_build_json_request_with_subreddit(self):
         spider = self._make_spider()
         spider.query = "async"
         spider.subreddit = "learnpython"
-        req = spider._build_json_precheck_request()
+        spider.limit = 25
+        req = spider._build_json_request()
         assert "search.json" in req.url
         assert "r/learnpython" in req.url
         assert "restrict_sr=on" in req.url
         assert "async" in req.url
+        assert "raw_json=1" in req.url
 
     def test_build_rss_request_with_subreddit(self):
         spider = self._make_spider()
@@ -767,3 +808,407 @@ class TestRedditSpider:
             written_data = mock_dump.call_args[0][0]
             assert "learnpython:async" in written_data
             assert written_data["learnpython:async"] == "2026-05-04T00:00:00Z"
+
+    # ── parse_json_results tests ──────────────────────
+
+    def _make_json_search_response(self, data=None, after=None):
+        if data is None:
+            data = {}
+        response = MagicMock()
+        response.meta = {"query": "test", "limit": 10, "count": 0, "strategy": "json_api"}
+        response.text = json.dumps({
+            "kind": "Listing",
+            "data": {
+                "after": after,
+                "before": None,
+                "children": data.get("children", []),
+            },
+        })
+        response.url = "https://old.reddit.com/search.json?q=test"
+        return response
+
+    def _make_json_post_child(self, **overrides):
+        base = {
+            "kind": "t3",
+            "data": {
+                "title": "Test Post",
+                "permalink": "/r/test/comments/abc123/test_post/",
+                "author": "u_tester",
+                "score": 42,
+                "num_comments": 7,
+                "created_utc": 1746403200.0,
+                "selftext": "Post content here.",
+                "selftext_html": "<p>Post content</p>",
+                "thumbnail": "self",
+                "link_flair_text": "Discussion",
+                "domain": "self.test",
+                "over_18": False,
+                "is_self": True,
+                "subreddit": "test",
+                "id": "abc123",
+                "name": "t3_abc123",
+            },
+        }
+        base["data"].update(overrides)
+        return base
+
+    def test_parse_json_results_self_post_emitted_directly(self):
+        spider = self._make_spider()
+        post_data = {
+            "title": "Self Post",
+            "permalink": "/r/test/comments/abc/self/",
+            "author": "u_author",
+            "score": 15,
+            "num_comments": 3,
+            "created_utc": 1746403200.0,
+            "selftext": "Content",
+            "thumbnail": "self",
+            "link_flair_text": "Discussion",
+            "domain": "self.test",
+            "over_18": False,
+            "is_self": True,
+            "subreddit": "test",
+            "id": "abc",
+        }
+        response = self._make_json_search_response({
+            "children": [{"kind": "t3", "data": post_data}],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        item = items[0]
+        assert isinstance(item, PostItem)
+        assert item["title"] == "Self Post"
+        assert item["content"] == "Content"
+        assert item["is_self_post"] is True
+        assert item["thumbnail"] == "self"
+        assert item["link_flair"] == "Discussion"
+        assert item["domain"] == "self.test"
+        assert item["nsfw"] is False
+        assert item["permalink"] == "/r/test/comments/abc/self/"
+        assert item["metadata"]["strategy"] == "json_api"
+
+    def test_parse_json_results_link_post_follows_detail(self):
+        spider = self._make_spider()
+        post_data = {
+            "title": "Link Post",
+            "permalink": "/r/test/comments/abc/link/",
+            "author": "u_author",
+            "score": 25,
+            "num_comments": 5,
+            "created_utc": 1746403200.0,
+            "selftext": "",
+            "is_self": False,
+            "subreddit": "test",
+            "id": "abc",
+        }
+        response = self._make_json_search_response({
+            "children": [{"kind": "t3", "data": post_data}],
+        })
+
+        def mock_follow(url, **kw):
+            mock = MagicMock()
+            mock.url = url
+            mock.meta = kw.get("meta", {})
+            mock.callback = kw.get("callback")
+            return mock
+
+        response.follow.side_effect = mock_follow
+
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0].callback == spider.parse_post_page
+
+    def test_parse_json_results_nsfw_exclude(self):
+        spider = self._make_spider()
+        spider.nsfw = "exclude"
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="SFW", over_18=False),
+                self._make_json_post_child(title="NSFW", over_18=True, id="nsfw1", name="t3_nsfw1"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "SFW"
+
+    def test_parse_json_results_nsfw_only(self):
+        spider = self._make_spider()
+        spider.nsfw = "only"
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="SFW", over_18=False),
+                self._make_json_post_child(title="NSFW", over_18=True, id="nsfw1", name="t3_nsfw1"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "NSFW"
+
+    def test_parse_json_results_cutoff_filters_old(self):
+        spider = self._make_spider()
+        spider.cutoff_date = "2026-05-04T00:00:00+00:00"
+        if spider.cutoff_date:
+            dt = date_parser.parse(spider.cutoff_date)
+            cutoff_ts = dt.replace(tzinfo=timezone.utc).timestamp()
+        else:
+            cutoff_ts = 0
+        new_epoch = cutoff_ts + 3600
+        old_epoch = cutoff_ts - 3600
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="New", created_utc=new_epoch, id="n", name="t3_n"),
+                self._make_json_post_child(title="Old", created_utc=old_epoch, id="o", name="t3_o"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "New"
+
+    def test_parse_json_results_skips_removed(self):
+        spider = self._make_spider()
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="[removed]", id="r", name="t3_r"),
+                self._make_json_post_child(title="Good", id="g", name="t3_g"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "Good"
+
+    def test_parse_json_results_skips_no_title(self):
+        spider = self._make_spider()
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="", id="nt", name="t3_nt"),
+                self._make_json_post_child(title="Good", id="g", name="t3_g"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "Good"
+
+    def test_parse_json_results_skips_t1_comments(self):
+        spider = self._make_spider()
+        response = self._make_json_search_response({
+            "children": [
+                {"kind": "t1", "data": {"body": "comment", "id": "c1", "name": "t1_c1"}},
+                self._make_json_post_child(title="Good", id="g", name="t3_g"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "Good"
+
+    def test_parse_json_results_no_posts(self):
+        spider = self._make_spider()
+        response = self._make_json_search_response({"children": []})
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 0
+
+    def test_parse_json_results_invalid_json(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {"query": "test", "limit": 10, "count": 0}
+        response.text = "not json"
+        items = list(spider.parse_json_results(response))
+        assert len(items) >= 1
+        assert isinstance(items[0], scrapy.Request)
+
+    def test_parse_json_results_pagination(self):
+        spider = self._make_spider()
+        response = self._make_json_search_response(
+            {"children": [self._make_json_post_child()]},
+            after="t3_next_page",
+        )
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 2
+        assert isinstance(items[0], PostItem)
+        assert isinstance(items[1], scrapy.Request)
+
+    def test_parse_json_results_pagination_stops_at_limit(self):
+        spider = self._make_spider()
+        children = []
+        for i in range(5):
+            children.append(self._make_json_post_child(
+                title=f"Post {i}", id=f"p{i}", name=f"t3_p{i}"
+            ))
+        response = self._make_json_search_response(
+            {"children": children}, after="t3_next",
+        )
+        response.meta["limit"] = 3
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 3
+
+    def test_parse_json_results_falls_back_on_empty(self):
+        spider = self._make_spider()
+        spider.settings.getbool.return_value = False
+        response = self._make_json_search_response({
+            "children": [
+                self._make_json_post_child(title="[removed]", id="r", name="t3_r"),
+            ],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert isinstance(items[0], scrapy.Request)
+
+    def test_build_post_item_from_json_all_fields(self):
+        spider = self._make_spider()
+        post_data = {
+            "title": "Full Post",
+            "permalink": "/r/test/comments/abc/full/",
+            "author": "u_tester",
+            "score": 100,
+            "num_comments": 50,
+            "created_utc": 1746403200.0,
+            "selftext": "Full content",
+            "thumbnail": "self",
+            "link_flair_text": "Flair",
+            "domain": "self.test",
+            "over_18": False,
+            "is_self": True,
+            "subreddit": "test",
+            "id": "abc",
+        }
+        item = spider._build_post_item_from_json(post_data, "test_query")
+        assert item["title"] == "Full Post"
+        assert item["score"] == 100
+        assert item["comment_count"] == 50
+        assert item["author"] == "u_tester"
+        assert item["content"] == "Full content"
+        assert item["thumbnail"] == "self"
+        assert item["link_flair"] == "Flair"
+        assert item["domain"] == "self.test"
+        assert item["nsfw"] is False
+        assert item["is_self_post"] is True
+        assert item["permalink"] == "/r/test/comments/abc/full/"
+        assert item["metadata"]["strategy"] == "json_api"
+        assert item["metadata"]["query"] == "test_query"
+        assert item["metadata"]["subreddit"] == "test"
+        assert item["metadata"]["id"] == "abc"
+        assert item["published_at"] is not None
+
+    def test_build_post_item_from_json_tracks_latest(self):
+        spider = self._make_spider()
+        post_data = {
+            "title": "Newest",
+            "permalink": "/r/test/comments/n/new/",
+            "author": "u_tester",
+            "score": 1,
+            "num_comments": 1,
+            "created_utc": 1746403200.0,
+            "selftext": "",
+            "subreddit": "test",
+            "id": "n",
+        }
+        spider._build_post_item_from_json(post_data, "q")
+        assert spider._latest_published is not None
+
+    # ── parse_comments_json tests ──────────────────────
+
+    def _make_post_fields_meta(self, **overrides):
+        base = {
+            "site": "reddit",
+            "url": "https://old.reddit.com/r/test/comments/abc/",
+            "title": "Test Post",
+            "author": "u_tester",
+            "content": "Post body",
+            "score": 42,
+            "comment_count": 7,
+            "published_at": "2026-05-05T00:00:00Z",
+            "thumbnail": "self",
+            "link_flair": "Discussion",
+            "domain": "self.test",
+            "nsfw": False,
+            "is_self_post": True,
+            "permalink": "/r/test/comments/abc/",
+            "_query": "test",
+            "_subreddit": "test",
+            "_strategy": "json_api",
+            "_post_id": "abc",
+        }
+        base.update(overrides)
+        return base
+
+    def test_parse_comments_json_extracts_top_comments(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {"_post_fields": self._make_post_fields_meta()}
+        response.text = json.dumps([
+            {"kind": "Listing", "data": {"children": []}},
+            {"kind": "Listing", "data": {"children": [
+                {"kind": "t1", "data": {"author": "u_c1", "score": 50, "body": "First"}},
+                {"kind": "t1", "data": {"author": "u_c2", "score": 30, "body": "Second"}},
+            ]}},
+        ])
+        items = list(spider.parse_comments_json(response))
+        assert len(items) == 1
+        item = items[0]
+        assert item["metadata"]["type"] == "detail"
+        assert item["metadata"]["strategy"] == "json_api"
+        assert item["metadata"]["id"] == "abc"
+        assert item["metadata"]["query"] == "test"
+        comments = item["metadata"]["top_comments"]
+        assert len(comments) == 2
+        assert comments[0]["author"] == "u_c1"
+        assert comments[0]["score"] == 50
+        assert comments[0]["body"] == "First"
+        assert item["comment_count"] == 7
+        assert item["title"] == "Test Post"
+        assert item["content"] == "Post body"
+
+    def test_parse_comments_json_skips_t3(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {"_post_fields": self._make_post_fields_meta()}
+        response.text = json.dumps([
+            {"kind": "Listing", "data": {"children": []}},
+            {"kind": "Listing", "data": {"children": [
+                {"kind": "t3", "data": {"title": "not a comment"}},
+                {"kind": "t1", "data": {"author": "u_c1", "score": 1, "body": "Real"}},
+            ]}},
+        ])
+        items = list(spider.parse_comments_json(response))
+        assert len(items[0]["metadata"]["top_comments"]) == 1
+
+    def test_parse_comments_json_invalid(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {"_post_fields": self._make_post_fields_meta()}
+        response.text = "not json"
+        items = list(spider.parse_comments_json(response))
+        assert len(items) == 1
+        assert items[0]["title"] == "Test Post"
+
+    def test_parse_comments_json_empty(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {"_post_fields": self._make_post_fields_meta()}
+        response.text = json.dumps([
+            {"kind": "Listing", "data": {"children": []}},
+            {"kind": "Listing", "data": {"children": []}},
+        ])
+        items = list(spider.parse_comments_json(response))
+        assert len(items) == 1
+        assert items[0]["metadata"]["top_comments"] == []
+
+    def test_parse_comments_json_missing_meta(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {}
+        response.text = json.dumps([{}])
+        items = list(spider.parse_comments_json(response))
+        assert len(items) == 0
+
+    # ── nsfw param tests ────────────────────────────
+
+    def test_include_comments_param_default(self):
+        with patch.object(RedditSpider, "_load_cutoff_date", return_value=None):
+            spider = RedditSpider()
+        assert spider.include_comments is False
+
+    def test_include_comments_param_true(self):
+        with patch.object(RedditSpider, "_load_cutoff_date", return_value=None):
+            spider = RedditSpider()
+        setattr(spider, "include_comments", True)
+        assert spider.include_comments is True

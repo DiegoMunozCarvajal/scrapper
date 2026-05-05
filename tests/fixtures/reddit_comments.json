@@ -1,0 +1,73 @@
+[
+  {
+    "kind": "Listing",
+    "data": {
+      "children": [
+        {
+          "kind": "t3",
+          "data": {
+            "title": "Is Python fast enough for backends in 2026?",
+            "url": "https://old.reddit.com/r/Python/comments/abc123/is_python_fast_enough/",
+            "author": "u_pythonista",
+            "score": 245,
+            "num_comments": 67,
+            "created_utc": 1746403200.0,
+            "selftext": "I've been using Python for years...",
+            "thumbnail": "self",
+            "link_flair_text": "Discussion",
+            "domain": "self.Python",
+            "over_18": false,
+            "is_self": true,
+            "permalink": "/r/Python/comments/abc123/is_python_fast_enough/",
+            "subreddit": "Python",
+            "id": "abc123",
+            "name": "t3_abc123"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Listing",
+    "data": {
+      "children": [
+        {
+          "kind": "t1",
+          "data": {
+            "body": "Yes, with async frameworks like FastAPI you can handle 10k+ req/s easily.",
+            "author": "u_expert_dev",
+            "score": 120,
+            "created_utc": 1746406800.0,
+            "subreddit": "Python",
+            "id": "comment1",
+            "name": "t1_comment1"
+          }
+        },
+        {
+          "kind": "t1",
+          "data": {
+            "body": "I've benchmarked FastAPI against Express and it's comparable for I/O bound workloads.",
+            "author": "u_benchmark_guy",
+            "score": 85,
+            "created_utc": 1746410400.0,
+            "subreddit": "Python",
+            "id": "comment2",
+            "name": "t1_comment2"
+          }
+        },
+        {
+          "kind": "t1",
+          "data": {
+            "body": "Don't forget about latency - async Python is great but raw throughput isn't everything.",
+            "author": "u_systems_dev",
+            "score": 67,
+            "created_utc": 1746414000.0,
+            "subreddit": "Python",
+            "id": "comment3",
+            "name": "t1_comment3"
+          }
+        }
+      ]
+    }
+  }
+]
