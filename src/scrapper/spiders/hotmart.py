@@ -42,7 +42,7 @@ class HotmartSpider(scrapy.Spider):
             yield Request(
                 api_url,
                 callback=self.parse_api,
-                meta={"query": query, "limit": limit, "page": page, "strategy": "api"},
+                meta={"query": query, "limit": limit, "page": page, "strategy": "api", "scraped_count": 0},
                 headers=self._api_headers_cache or {},
                 errback=lambda f: self._fallback_to_playwright(f, query, limit),
             )
@@ -52,8 +52,9 @@ class HotmartSpider(scrapy.Spider):
                 callback=self.discover_api_callback,
                 meta={
                     "playwright": True,
+                    "playwright_page_init_callback": _install_api_interceptor,
                     "playwright_page_methods": [
-                        PageMethod(_intercept_api_calls, query),
+                        PageMethod("wait_for_timeout", 5000),
                     ],
                     "query": query,
                     "limit": limit,
@@ -71,7 +72,7 @@ class HotmartSpider(scrapy.Spider):
             yield Request(
                 api_url,
                 callback=self.parse_api,
-                meta={"query": query, "limit": limit, "page": page, "strategy": "api"},
+                meta={"query": query, "limit": limit, "page": page, "strategy": "api", "scraped_count": 0},
                 headers=self._api_headers_cache or {},
                 errback=lambda f: self._fallback_to_playwright(f, query, limit),
             )
@@ -81,8 +82,9 @@ class HotmartSpider(scrapy.Spider):
                 callback=self.discover_api_callback,
                 meta={
                     "playwright": True,
+                    "playwright_page_init_callback": _install_api_interceptor,
                     "playwright_page_methods": [
-                        PageMethod(_intercept_api_calls, query),
+                        PageMethod("wait_for_timeout", 5000),
                     ],
                     "query": query,
                     "limit": limit,
@@ -90,14 +92,11 @@ class HotmartSpider(scrapy.Spider):
             )
 
     def discover_api_callback(self, response):
-        """Read intercepted API calls from PageMethod result."""
+        """Read intercepted API calls from page init callback."""
         query = response.meta["query"]
         limit = response.meta["limit"]
 
-        intercepted = []
-        methods = response.meta.get("playwright_page_methods", [])
-        if methods and methods[0].result is not None:
-            intercepted = methods[0].result
+        intercepted = response.meta.get("_hotmart_api_calls", [])
 
         if intercepted:
             self.logger.info(f"Intercepted {len(intercepted)} API calls")
@@ -150,12 +149,12 @@ class HotmartSpider(scrapy.Spider):
             return
 
         products = self._extract_products_from_json(data)
-        count = 0
+        scraped_count = response.meta.get("scraped_count", 0)
 
         for product in products:
-            if count >= limit:
+            if scraped_count >= limit:
                 return
-            count += 1
+            scraped_count += 1
             product["metadata"]["query"] = query
             yield ProductItem(product)
 
@@ -163,7 +162,7 @@ class HotmartSpider(scrapy.Spider):
             self.logger.info("API returned empty products list, stopping pagination")
             return
 
-        if count < limit:
+        if scraped_count < limit:
             pagination = data.get("data", {}).get("search", {}).get("pagination", {})
             total_pages = pagination.get("totalPages", 1)
             if page < total_pages:
@@ -180,6 +179,7 @@ class HotmartSpider(scrapy.Spider):
                         "limit": limit,
                         "page": next_page,
                         "strategy": "api",
+                        "scraped_count": scraped_count,
                     },
                     headers=self._api_headers_cache or {},
                 )
@@ -365,19 +365,17 @@ def _parse_price(text):
 
 
 def _parse_review_count(text):
-    """Extract integer review count from text like '234 reviews'."""
+    """Extract integer review count from text like '1,234 reviews'."""
     if not text:
         return 0
-    try:
-        numbers = re.findall(r"\d+", text)
-        return int(numbers[0]) if numbers else 0
-    except (ValueError, IndexError):
-        return 0
+    digits = re.sub(r"\D", "", text)
+    return int(digits) if digits else 0
 
 
-async def _intercept_api_calls(page, query):
-    """PageMethod callable: intercept API requests and return them."""
+async def _install_api_interceptor(page, request):
+    """Install route interception before initial navigation."""
     intercepted: list[dict[str, Any]] = []
+    request.meta["_hotmart_api_calls"] = intercepted
 
     async def capture_route(route):
         url = route.request.url
@@ -391,8 +389,6 @@ async def _intercept_api_calls(page, query):
         await route.continue_()
 
     await page.route("**/*", capture_route)
-    await page.wait_for_timeout(5000)
-    return intercepted
 
 
 async def _click_load_more(page):
