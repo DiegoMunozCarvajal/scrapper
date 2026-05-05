@@ -1323,3 +1323,10 @@ class TestRedditSpider:
         spider = self._make_spider()
         result = spider._normalize_published_at("not-a-date")
         assert result == "not-a-date"
+
+    def test_start_requests_fallback(self):
+        spider = self._make_spider()
+        spider.query = "python"
+        reqs = list(spider.start_requests())
+        assert len(reqs) >= 2
+        assert any("old.reddit.com" in r.url for r in reqs)

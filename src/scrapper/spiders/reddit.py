@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -66,6 +67,15 @@ class RedditSpider(scrapy.Spider):
                 self._has_query = True
         else:
             self._has_query = True
+        self._validate_subreddit()
+
+    def _validate_subreddit(self):
+        """Warn if subreddit name looks invalid."""
+        if self.subreddit and not self._has_query:
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_]{1,20}$', self.subreddit):
+                self.logger.warning(
+                    f"Subreddit '{self.subreddit}' looks invalid — may produce no results"
+                )
 
     @staticmethod
     def _normalize_post_url(url):
@@ -288,6 +298,17 @@ class RedditSpider(scrapy.Spider):
         else:
             yield self._build_json_request()
 
+    def start_requests(self):
+        """Synchronous fallback for Scrapy < 2.13 (when async start() is not supported)."""
+        yield scrapy.Request(
+            "https://old.reddit.com/",
+            callback=self._health_check,
+            errback=self._health_check_error,
+            dont_filter=True,
+            meta={"health_check": True},
+        )
+        yield self._build_json_request()
+
     def _health_check(self, response):
         self.logger.info("Health check: old.reddit.com is reachable")
 
@@ -410,23 +431,17 @@ class RedditSpider(scrapy.Spider):
                     headers=_SEARCH_HEADERS,
                 )
 
-        if count == start_count and skipped_old == 0:
+        if count == start_count:
+            if skipped_old > 0:
+                self.logger.info(
+                    f"JSON API: all {skipped_old} posts older than cutoff, stopping"
+                )
+                return
             self.logger.warning(
                 "JSON API: no usable posts, falling through to HTML search"
             )
             yield self._build_html_search_request()
             return
-
-        if count == start_count and skipped_old > 0:
-            if self.sort == "new":
-                self.logger.info(
-                    f"JSON API: all {skipped_old} posts older than cutoff, stopping"
-                )
-                return
-            self.logger.info(
-                f"JSON API: all {skipped_old} posts on page older than cutoff, "
-                f"but sort={self.sort} — continuing pagination"
-            )
 
         after_fullname = data.get("data", {}).get("after")
         if count < limit and after_fullname:
@@ -940,9 +955,11 @@ class RedditSpider(scrapy.Spider):
             response = failure.value.response
             if response.status == 429:
                 retry_after = response.headers.get(b"Retry-After", b"unknown").decode()
+                delay = self.settings.getint("DOWNLOAD_DELAY", 2)
                 self.logger.warning(
                     f"Rate limited (429) on {failure.request.url}. "
-                    f"Retry-After: {retry_after}"
+                    f"Retry-After: {retry_after}. "
+                    f"Current DOWNLOAD_DELAY: {delay}s. Consider increasing it."
                 )
             else:
                 self.logger.warning(
