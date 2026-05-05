@@ -2,7 +2,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 from loguru import logger
-from scrapy.exceptions import DropItem
+from scrapy.exceptions import DropItem, NotConfigured
 from supabase import create_client
 
 from .items import GenericItem, PostItem
@@ -155,15 +155,37 @@ class DedupInMemoryPipeline:
 class SupabasePipeline:
     """Upsert items into Supabase Postgres tables."""
 
+    TABLE_FIELDS = {
+        "posts": {
+            "site", "url", "title", "author", "content", "score", "comment_count",
+            "published_at", "thumbnail", "link_flair", "domain", "nsfw",
+            "is_self_post", "permalink", "quality_issues", "metadata", "scraped_at",
+        },
+        "products": {
+            "site", "url", "title", "price", "currency", "rating", "review_count",
+            "seller", "availability", "quality_issues", "metadata", "scraped_at",
+        },
+        "scraped_pages": {
+            "site", "url", "page_type", "title", "content", "price", "currency",
+            "rating", "review_count", "score", "author", "image_url", "category",
+            "published_at", "quality_issues", "metadata", "scraped_at",
+        },
+    }
+
     def __init__(self, supabase_url: str, supabase_key: str):
         self.client = create_client(supabase_url, supabase_key)
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls(
-            supabase_url=crawler.settings.get("SUPABASE_URL", ""),
-            supabase_key=crawler.settings.get("SUPABASE_KEY", ""),
-        )
+        supabase_url = crawler.settings.get("SUPABASE_URL", "")
+        supabase_key = crawler.settings.get("SUPABASE_KEY", "")
+        if not supabase_url or not supabase_key:
+            raise NotConfigured("SUPABASE_URL and SUPABASE_KEY are required for SupabasePipeline")
+        return cls(supabase_url=supabase_url, supabase_key=supabase_key)
+
+    def _serialize_item(self, item, table: str) -> dict:
+        allowed = self.TABLE_FIELDS[table]
+        return {key: value for key, value in dict(item).items() if key in allowed}
 
     def process_item(self, item):
         if isinstance(item, GenericItem):
@@ -172,7 +194,7 @@ class SupabasePipeline:
             table = "posts"
         else:
             table = "products"
-        data = dict(item)
+        data = self._serialize_item(item, table)
         for attempt in range(1, 4):
             try:
                 self.client.table(table).upsert(data, on_conflict="site,url").execute()

@@ -1,7 +1,7 @@
 import pytest
-from scrapy.exceptions import DropItem
+from scrapy.exceptions import DropItem, NotConfigured
 from scrapper.items import GenericItem, PostItem, ProductItem
-from scrapper.pipelines import ValidatePipeline, DedupInMemoryPipeline, DataQualityPipeline
+from scrapper.pipelines import ValidatePipeline, DedupInMemoryPipeline, DataQualityPipeline, SupabasePipeline
 
 
 class FakeCrawler:
@@ -254,3 +254,45 @@ class TestDataQualityPipeline:
         pipe.process_item(item1)
         with pytest.raises(DropItem, match="Duplicate URL"):
             pipe.process_item(item2)
+
+
+class FakeSettings(dict):
+    def get(self, key, default=None):
+        return super().get(key, default)
+
+
+class FakeCrawlerWithSettings:
+    def __init__(self, settings):
+        self.settings = FakeSettings(settings)
+
+
+def test_supabase_pipeline_disabled_without_credentials():
+    crawler = FakeCrawlerWithSettings({"SUPABASE_URL": "", "SUPABASE_KEY": ""})
+    with pytest.raises(NotConfigured, match="SUPABASE_URL and SUPABASE_KEY"):
+        SupabasePipeline.from_crawler(crawler)
+
+
+def test_supabase_pipeline_serializes_only_table_columns():
+    pipe = SupabasePipeline.__new__(SupabasePipeline)
+    item = PostItem(
+        site="reddit",
+        url="https://old.reddit.com/r/test/comments/abc/title/",
+        title="Title",
+        thumbnail="https://example.com/thumb.jpg",
+        link_flair="Discussion",
+        domain="self.test",
+        nsfw=False,
+        is_self_post=True,
+        permalink="/r/test/comments/abc/title/",
+        quality_issues=["low_score"],
+        metadata={"strategy": "json_api"},
+    )
+
+    data = pipe._serialize_item(item, "posts")
+
+    assert data["thumbnail"] == "https://example.com/thumb.jpg"
+    assert data["link_flair"] == "Discussion"
+    assert data["is_self_post"] is True
+    assert data["quality_issues"] == ["low_score"]
+    # Fields not in TABLE_FIELDS["posts"] must be excluded
+    assert "extra_field" not in data
