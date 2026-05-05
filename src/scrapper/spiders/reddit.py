@@ -949,97 +949,96 @@ class RedditSpider(scrapy.Spider):
             except Exception:
                 pass
 
-    def parse_post_page(self, response):
-        """Extract full post content from detail page."""
-        json_data = response.meta.get("_json_data", {})
+    def _parse_post_from_json(self, response, json_data):
+        """Extract post from JSON data embedded in response meta (API strategy)."""
         strategy = response.meta.get("strategy", "unknown")
+        created_utc = json_data.get("created_utc", 0)
 
-        if json_data:
-            created_utc = json_data.get("created_utc", 0)
-            if created_utc and self._is_past_cutoff(created_utc):
-                self.logger.info(f"Stopping: post older than cutoff {self.cutoff_date}")
-                return
-
-            author = json_data.get("author", "").strip()
-            if author in ("[deleted]",):
-                self.logger.info(f"Skipping removed/deleted post: {response.url}")
-                return
-
-            title = json_data.get("title", "").strip()
-            post_url = self._normalize_post_url(response.url)
-
-            if not post_url or not title:
-                self.logger.warning(f"Skipping post with no URL/title: {post_url}")
-                return
-
-            published_at = None
-            if created_utc:
-                published_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
-                self._track_latest_published(published_at)
-
-            subreddit_name = json_data.get("subreddit", "")
-            post_id = json_data.get("id", "")
-            num_comments = json_data.get("num_comments", 0)
-
-            if self.include_comments and post_id and num_comments > 0:
-                comments_url = (
-                    f"https://old.reddit.com/comments/{post_id}.json"
-                    f"?limit=5&raw_json=1"
-                )
-                post_fields = {
-                    "site": self.site,
-                    "url": post_url,
-                    "title": title,
-                    "author": author,
-                    "content": json_data.get("selftext", ""),
-                    "score": json_data.get("score", 0),
-                    "comment_count": num_comments,
-                    "published_at": published_at,
-                    "thumbnail": json_data.get("thumbnail", ""),
-                    "link_flair": json_data.get("link_flair_text", ""),
-                    "domain": json_data.get("domain", ""),
-                    "nsfw": json_data.get("over_18", False),
-                    "is_self_post": json_data.get("is_self", False),
-                    "permalink": json_data.get("permalink", ""),
-                    "_query": response.meta.get("query"),
-                    "_subreddit": subreddit_name,
-                    "_strategy": strategy,
-                    "_post_id": post_id,
-                }
-                yield scrapy.Request(
-                    comments_url,
-                    callback=self.parse_comments_json,
-                    errback=self._handle_comments_error,
-                    meta={"_post_fields": post_fields},
-                    headers=_JSON_HEADERS,
-                )
-            else:
-                yield PostItem(
-                    site=self.site,
-                    url=post_url,
-                    title=title,
-                    author=author,
-                    content=json_data.get("selftext", ""),
-                    score=json_data.get("score", 0),
-                    comment_count=num_comments,
-                    published_at=published_at,
-                    thumbnail=json_data.get("thumbnail", ""),
-                    link_flair=json_data.get("link_flair_text", ""),
-                    domain=json_data.get("domain", ""),
-                    nsfw=json_data.get("over_18", False),
-                    is_self_post=json_data.get("is_self", False),
-                    permalink=json_data.get("permalink", ""),
-                    metadata={
-                        "type": "detail",
-                        "strategy": strategy,
-                        "top_comments": [],
-                        "query": response.meta.get("query"),
-                        "subreddit": subreddit_name,
-                        "id": post_id,
-                    },
-                )
+        if created_utc and self._is_past_cutoff(created_utc):
+            self.logger.info(f"Stopping: post older than cutoff {self.cutoff_date}")
             return
 
+        author = json_data.get("author", "").strip()
+        if author in ("[deleted]",):
+            self.logger.info(f"Skipping removed/deleted post: {response.url}")
+            return
+
+        title = json_data.get("title", "").strip()
+        post_url = self._normalize_post_url(response.url)
+
+        if not post_url or not title:
+            self.logger.warning(f"Skipping post with no URL/title: {post_url}")
+            return
+
+        published_at = None
+        if created_utc:
+            published_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
+            self._track_latest_published(published_at)
+
+        subreddit_name = json_data.get("subreddit", "")
+        post_id = json_data.get("id", "")
+        num_comments = json_data.get("num_comments", 0)
+
+        if self.include_comments and post_id and num_comments > 0:
+            comments_url = (
+                f"https://old.reddit.com/comments/{post_id}.json"
+                f"?limit=5&raw_json=1"
+            )
+            post_fields = {
+                "site": self.site,
+                "url": post_url,
+                "title": title,
+                "author": author,
+                "content": json_data.get("selftext", ""),
+                "score": json_data.get("score", 0),
+                "comment_count": num_comments,
+                "published_at": published_at,
+                "thumbnail": json_data.get("thumbnail", ""),
+                "link_flair": json_data.get("link_flair_text", ""),
+                "domain": json_data.get("domain", ""),
+                "nsfw": json_data.get("over_18", False),
+                "is_self_post": json_data.get("is_self", False),
+                "permalink": json_data.get("permalink", ""),
+                "_query": response.meta.get("query"),
+                "_subreddit": subreddit_name,
+                "_strategy": strategy,
+                "_post_id": post_id,
+            }
+            yield scrapy.Request(
+                comments_url,
+                callback=self.parse_comments_json,
+                errback=self._handle_comments_error,
+                meta={"_post_fields": post_fields},
+                headers=_JSON_HEADERS,
+            )
+        else:
+            yield PostItem(
+                site=self.site,
+                url=post_url,
+                title=title,
+                author=author,
+                content=json_data.get("selftext", ""),
+                score=json_data.get("score", 0),
+                comment_count=num_comments,
+                published_at=published_at,
+                thumbnail=json_data.get("thumbnail", ""),
+                link_flair=json_data.get("link_flair_text", ""),
+                domain=json_data.get("domain", ""),
+                nsfw=json_data.get("over_18", False),
+                is_self_post=json_data.get("is_self", False),
+                permalink=json_data.get("permalink", ""),
+                metadata={
+                    "type": "detail",
+                    "strategy": strategy,
+                    "top_comments": [],
+                    "query": response.meta.get("query"),
+                    "subreddit": subreddit_name,
+                    "id": post_id,
+                },
+            )
+
+    def _parse_post_from_html(self, response):
+        """Extract post from detail page via CSS scraping (HTML strategy)."""
         post_time_str = response.css("time::attr(datetime)").get()
         if self._is_past_cutoff(post_time_str):
             self.logger.info(f"Stopping: post {post_time_str} older than cutoff {self.cutoff_date}")
@@ -1138,3 +1137,11 @@ class RedditSpider(scrapy.Spider):
                 "id": post_id,
             },
         )
+
+    def parse_post_page(self, response):
+        """Extract full post content from detail page. Dispatches to JSON or HTML path."""
+        json_data = response.meta.get("_json_data", {})
+        if json_data:
+            yield from self._parse_post_from_json(response, json_data)
+        else:
+            yield from self._parse_post_from_html(response)
