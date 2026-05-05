@@ -49,6 +49,7 @@ class RedditSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cutoff_date = None
+        self._cutoff_dt = None
         self._latest_published = None
         self._cutoff_cache_path = None
         self.subreddit = getattr(self, "subreddit", None)
@@ -112,6 +113,14 @@ class RedditSpider(scrapy.Spider):
         if not self.cutoff_date:
             self._load_local_cutoff_date()
 
+        if self.cutoff_date:
+            try:
+                self._cutoff_dt = date_parser.parse(self.cutoff_date)
+                if self._cutoff_dt.tzinfo is None:
+                    self._cutoff_dt = self._cutoff_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                self._cutoff_dt = None
+
     def _load_local_cutoff_date(self):
         metrics_dir = self.settings.get("METRICS_DIR", "metrics")
         cache_file = Path(metrics_dir) / "reddit_cutoff.json"
@@ -130,6 +139,12 @@ class RedditSpider(scrapy.Spider):
             cutoff = data.get(self._cache_key)
             if cutoff:
                 self.cutoff_date = cutoff
+                try:
+                    self._cutoff_dt = date_parser.parse(cutoff)
+                    if self._cutoff_dt.tzinfo is None:
+                        self._cutoff_dt = self._cutoff_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    self._cutoff_dt = None
                 self.logger.info(
                     f"Incremental mode (local cache): cutoff date = {self.cutoff_date}"
                 )
@@ -137,16 +152,10 @@ class RedditSpider(scrapy.Spider):
             self.logger.warning(f"Could not load local cutoff cache: {e}")
 
     def _calculate_time_filter(self):
-        if not self.cutoff_date:
+        if self._cutoff_dt is None:
             return "all"
-        try:
-            cutoff = date_parser.parse(self.cutoff_date)
-            if cutoff.tzinfo is None:
-                cutoff = cutoff.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            hours_since = (now - cutoff).total_seconds() / 3600
-        except Exception:
-            return "all"
+        now = datetime.now(timezone.utc)
+        hours_since = (now - self._cutoff_dt).total_seconds() / 3600
 
         if hours_since <= 1:
             return "hour"
@@ -330,7 +339,6 @@ class RedditSpider(scrapy.Spider):
         count = response.meta["count"]
         start_count = count
 
-        cutoff_ts = self._get_cutoff_timestamp()
         skipped_old = 0
 
         for post in posts:
@@ -354,10 +362,9 @@ class RedditSpider(scrapy.Spider):
                 continue
 
             created_utc = post_data.get("created_utc", 0)
-            if cutoff_ts is not None and created_utc:
-                if created_utc <= cutoff_ts:
-                    skipped_old += 1
-                    continue
+            if created_utc and self._is_past_cutoff(created_utc):
+                skipped_old += 1
+                continue
 
             count += 1
             is_self = post_data.get("is_self", False)
@@ -452,16 +459,28 @@ class RedditSpider(scrapy.Spider):
             },
         )
 
-    def _get_cutoff_timestamp(self):
-        if not self.cutoff_date:
-            return None
+    def _is_past_cutoff(self, dt_value):
+        """Check if a datetime/timestamp/string is older than the cutoff. Returns bool.
+
+        Uses <= (inclusive): posts created exactly at the cutoff are excluded.
+        """
+        if self._cutoff_dt is None:
+            return False
+        if dt_value is None:
+            return False
         try:
-            cutoff = date_parser.parse(self.cutoff_date)
-            if cutoff.tzinfo is None:
-                cutoff = cutoff.replace(tzinfo=timezone.utc)
-            return cutoff.timestamp()
+            if isinstance(dt_value, (int, float)):
+                return dt_value <= self._cutoff_dt.timestamp()
+            dt = dt_value
+            if isinstance(dt, str):
+                dt = date_parser.parse(dt)
+            if not isinstance(dt, datetime):
+                return False
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt <= self._cutoff_dt
         except Exception:
-            return None
+            return False
 
     def _json_request_error(self, failure):
         self.logger.warning(
@@ -710,18 +729,10 @@ class RedditSpider(scrapy.Spider):
             if not title or not url:
                 continue
 
-            if published and self.cutoff_date:
-                try:
-                    post_time = date_parser.parse(published)
-                    cutoff = date_parser.parse(self.cutoff_date)
-                    if post_time < cutoff:
-                        self.logger.info(
-                            f"Skipping RSS post older than cutoff: {title}"
-                        )
-                        filtered_count += 1
-                        continue
-                except Exception:
-                    pass
+            if self._is_past_cutoff(published):
+                self.logger.info(f"Skipping RSS post older than cutoff: {title}")
+                filtered_count += 1
+                continue
 
             count += 1
 
@@ -781,15 +792,9 @@ class RedditSpider(scrapy.Spider):
             post_time_str = card.css("time::attr(datetime)").get()
             if post_time_str:
                 cards_with_time += 1
-                if self.cutoff_date:
-                    try:
-                        post_time = date_parser.parse(post_time_str)
-                        cutoff = date_parser.parse(self.cutoff_date)
-                        if post_time < cutoff:
-                            cards_skipped_old += 1
-                            continue
-                    except Exception:
-                        pass
+                if self._is_past_cutoff(post_time_str):
+                    cards_skipped_old += 1
+                    continue
 
             count += 1
             yield response.follow(
@@ -951,18 +956,9 @@ class RedditSpider(scrapy.Spider):
 
         if json_data:
             created_utc = json_data.get("created_utc", 0)
-            if created_utc and self.cutoff_date:
-                try:
-                    cutoff = date_parser.parse(self.cutoff_date)
-                    if cutoff.tzinfo is None:
-                        cutoff = cutoff.replace(tzinfo=timezone.utc)
-                    if created_utc <= cutoff.timestamp():
-                        self.logger.info(
-                            f"Stopping: post older than cutoff {self.cutoff_date}"
-                        )
-                        return
-                except Exception:
-                    pass
+            if created_utc and self._is_past_cutoff(created_utc):
+                self.logger.info(f"Stopping: post older than cutoff {self.cutoff_date}")
+                return
 
             author = json_data.get("author", "").strip()
             if author in ("[deleted]",):
@@ -1049,21 +1045,9 @@ class RedditSpider(scrapy.Spider):
             return
 
         post_time_str = response.css("time::attr(datetime)").get()
-        if post_time_str and self.cutoff_date:
-            try:
-                post_time = date_parser.parse(post_time_str)
-                cutoff = date_parser.parse(self.cutoff_date)
-                if post_time.tzinfo is None:
-                    post_time = post_time.replace(tzinfo=timezone.utc)
-                if cutoff.tzinfo is None:
-                    cutoff = cutoff.replace(tzinfo=timezone.utc)
-                if post_time < cutoff:
-                    self.logger.info(
-                        f"Stopping: post {post_time} older than cutoff {self.cutoff_date}"
-                    )
-                    return
-            except Exception:
-                pass
+        if self._is_past_cutoff(post_time_str):
+            self.logger.info(f"Stopping: post {post_time_str} older than cutoff {self.cutoff_date}")
+            return
 
         content = "".join(response.css("div.md *::text").getall()).strip()
 

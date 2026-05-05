@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import scrapy
-from dateutil import parser as date_parser
 from scrapy.http import HtmlResponse
 
 from scrapper.items import PostItem
@@ -125,6 +124,7 @@ class TestRedditSpider:
     def test_cutoff_date_filters_old_posts(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-03T00:00:00+00:00"
+        spider._cutoff_dt = datetime(2026, 5, 3, tzinfo=timezone.utc)
         post_date = datetime(2026, 5, 2, tzinfo=timezone.utc)
         html = f'<html><body><time datetime="{post_date.isoformat()}">old</time><a class="title">Title</a><a class="author">Author</a></body></html>'
         response = self._make_response(url="https://old.reddit.com/r/Python/comments/abc123/title/", body=html)
@@ -203,6 +203,7 @@ class TestRedditSpider:
     def test_calculate_time_filter_hour(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-04T10:49:00+00:00"
+        spider._cutoff_dt = datetime(2026, 5, 4, 10, 49, 0, tzinfo=timezone.utc)
         with patch("scrapper.spiders.reddit.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 5, 4, 10, 49, 30, tzinfo=timezone.utc)
             mock_dt.timezone = timezone
@@ -211,6 +212,7 @@ class TestRedditSpider:
     def test_calculate_time_filter_day(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-03T10:00:00+00:00"
+        spider._cutoff_dt = datetime(2026, 5, 3, 10, 0, 0, tzinfo=timezone.utc)
         with patch("scrapper.spiders.reddit.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
             mock_dt.timezone = timezone
@@ -219,6 +221,7 @@ class TestRedditSpider:
     def test_calculate_time_filter_week(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-04-28T10:00:00+00:00"
+        spider._cutoff_dt = datetime(2026, 4, 28, 10, 0, 0, tzinfo=timezone.utc)
         with patch("scrapper.spiders.reddit.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
             mock_dt.timezone = timezone
@@ -279,18 +282,6 @@ class TestRedditSpider:
         req = spider._build_json_request()
         assert "t=week" in req.url
 
-    def test_get_cutoff_timestamp_no_cutoff(self):
-        spider = self._make_spider()
-        spider.cutoff_date = None
-        assert spider._get_cutoff_timestamp() is None
-
-    def test_get_cutoff_timestamp_with_cutoff(self):
-        spider = self._make_spider()
-        spider.cutoff_date = "2026-05-04T00:00:00+00:00"
-        ts = spider._get_cutoff_timestamp()
-        assert ts is not None
-        assert ts > 0
-
     def test_json_request_error_falls_back(self):
         spider = self._make_spider()
         spider.query = "test"
@@ -307,6 +298,7 @@ class TestRedditSpider:
     def test_parse_skips_old_cards_at_listing_level(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-04T00:00:00+00:00"
+        spider._cutoff_dt = datetime(2026, 5, 4, tzinfo=timezone.utc)
 
         def make_card(title, href, posted_at):
             card = MagicMock()
@@ -357,6 +349,7 @@ class TestRedditSpider:
     def test_parse_all_old_cards_stops_gracefully(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-04T00:00:00+00:00"
+        spider._cutoff_dt = datetime(2026, 5, 4, tzinfo=timezone.utc)
 
         def make_card(title, href, posted_at):
             card = MagicMock()
@@ -947,11 +940,8 @@ class TestRedditSpider:
     def test_parse_json_results_cutoff_filters_old(self):
         spider = self._make_spider()
         spider.cutoff_date = "2026-05-04T00:00:00+00:00"
-        if spider.cutoff_date:
-            dt = date_parser.parse(spider.cutoff_date)
-            cutoff_ts = dt.replace(tzinfo=timezone.utc).timestamp()
-        else:
-            cutoff_ts = 0
+        spider._cutoff_dt = datetime(2026, 5, 4, tzinfo=timezone.utc)
+        cutoff_ts = spider._cutoff_dt.timestamp()
         new_epoch = cutoff_ts + 3600
         old_epoch = cutoff_ts - 3600
         response = self._make_json_search_response({
@@ -1212,3 +1202,37 @@ class TestRedditSpider:
             spider = RedditSpider()
         setattr(spider, "include_comments", True)
         assert spider.include_comments is True
+
+    # ── _is_past_cutoff tests ─────────────────────────
+
+    def test_is_past_cutoff_with_timestamp(self):
+        spider = self._make_spider()
+        spider._cutoff_dt = datetime(2026, 5, 3, tzinfo=timezone.utc)
+        # May 3 00:00 UTC = 1777766400.0, May 5 00:00 UTC = 1777939200.0
+        assert spider._is_past_cutoff(1777766400.0) is True  # May 3 00:00 UTC (on cutoff)
+        assert spider._is_past_cutoff(1777939200.0) is False  # May 5 00:00 UTC (after cutoff)
+
+    def test_is_past_cutoff_with_string(self):
+        spider = self._make_spider()
+        spider._cutoff_dt = datetime(2026, 5, 3, tzinfo=timezone.utc)
+        assert spider._is_past_cutoff("2026-05-02T00:00:00Z") is True
+        assert spider._is_past_cutoff("2026-05-04T00:00:00Z") is False
+
+    def test_is_past_cutoff_no_cutoff(self):
+        spider = self._make_spider()
+        spider._cutoff_dt = None
+        assert spider._is_past_cutoff("2020-01-01T00:00:00Z") is False
+
+    def test_is_past_cutoff_invalid_input(self):
+        spider = self._make_spider()
+        spider._cutoff_dt = datetime(2026, 5, 3, tzinfo=timezone.utc)
+        assert spider._is_past_cutoff("not-a-date") is False
+        assert spider._is_past_cutoff(None) is False
+
+    def test_calculate_time_filter_uses_cached_dt(self):
+        spider = self._make_spider()
+        spider._cutoff_dt = datetime(2026, 5, 3, 10, 0, 0, tzinfo=timezone.utc)
+        with patch("scrapper.spiders.reddit.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
+            mock_dt.timezone = timezone
+            assert spider._calculate_time_filter() == "day"
