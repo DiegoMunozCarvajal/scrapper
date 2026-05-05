@@ -78,11 +78,40 @@ class RedditSpider(scrapy.Spider):
             return f"https://old.reddit.com{url}"
         return url
 
+    def _build_reddit_base_url(self, path, query=None, sort=None, time_filter=None,
+                               restrict_sr=False, type_filter=None, raw_json=False,
+                               limit=None):
+        """Build an old.reddit.com URL with consistent query parameters."""
+        params = []
+        if query:
+            params.append(f"q={quote_plus(query)}")
+        if sort:
+            params.append(f"sort={sort}")
+        if type_filter:
+            params.append(f"type={type_filter}")
+        if restrict_sr:
+            if self.subreddit:
+                params.append("restrict_sr=on")
+            else:
+                params.append("restrict_sr=off")
+        if time_filter:
+            params.append(f"t={time_filter}")
+        if raw_json:
+            params.append("raw_json=1")
+        if limit is not None:
+            params.append(f"limit={limit}")
+        url = f"https://old.reddit.com{path}"
+        if params:
+            url += "?" + "&".join(params)
+        return url
+
     @property
     def _cache_key(self):
         if self._has_query:
             return f"{self.subreddit}:{self.query}" if self.subreddit else self.query
-        return f"{self.subreddit}:sort={self.sort}"
+        if self.subreddit:
+            return f"{self.subreddit}:sort={self.sort}"
+        return f"sort={self.sort}"
 
     async def _load_cutoff_date(self):
         supabase_url = self.settings.get("SUPABASE_URL")
@@ -217,23 +246,20 @@ class RedditSpider(scrapy.Spider):
         limit = min(int(getattr(self, "limit", 25)), _REDDIT_JSON_LIMIT)
         time_filter = self.time_filter or self._calculate_time_filter()
         if self._has_query:
-            if self.subreddit:
-                rss_url = (
-                    f"https://www.reddit.com/r/{self.subreddit}/search.rss"
-                    f"?q={quote_plus(query)}&restrict_sr=on&sort=new&t={time_filter}&limit={limit}"
-                )
-            else:
-                rss_url = (
-                    f"https://www.reddit.com/search.rss"
-                    f"?q={quote_plus(query)}&sort=new&t={time_filter}&limit={limit}"
-                )
+            path = f"/r/{self.subreddit}/search.rss" if self.subreddit else "/search.rss"
+            url = self._build_reddit_base_url(
+                path=path, query=query, sort="new", restrict_sr=bool(self.subreddit),
+                time_filter=time_filter, limit=limit,
+            )
         else:
             if self.sort == "new":
-                rss_url = f"https://www.reddit.com/r/{self.subreddit}/new.rss?sort=new&limit={limit}"
+                path = f"/r/{self.subreddit}/new.rss"
+                url = self._build_reddit_base_url(path=path, sort="new", limit=limit)
             else:
-                rss_url = f"https://www.reddit.com/r/{self.subreddit}.rss?limit={limit}"
+                path = f"/r/{self.subreddit}.rss"
+                url = self._build_reddit_base_url(path=path, limit=limit)
         return scrapy.Request(
-            rss_url,
+            url,
             callback=self.parse_rss,
             meta={"query": query, "limit": limit},
             errback=self._fallback_to_search,
@@ -277,37 +303,19 @@ class RedditSpider(scrapy.Spider):
         sort = self.sort
 
         if self._has_query:
-            if self.subreddit:
-                url = (
-                    f"https://old.reddit.com/r/{self.subreddit}/search.json"
-                    f"?q={quote_plus(query)}"
-                    f"&sort={sort}"
-                    f"&type=link"
-                    f"&restrict_sr=on"
-                    f"&t={time_filter}"
-                    f"&raw_json=1"
-                    f"&limit={limit}"
-                )
-            else:
-                url = (
-                    f"https://old.reddit.com/search.json"
-                    f"?q={quote_plus(query)}"
-                    f"&sort={sort}"
-                    f"&type=link"
-                    f"&restrict_sr=off"
-                    f"&t={time_filter}"
-                    f"&raw_json=1"
-                    f"&limit={limit}"
-                )
+            path = f"/r/{self.subreddit}/search.json" if self.subreddit else "/search.json"
+            url = self._build_reddit_base_url(
+                path=path, query=query, sort=sort, type_filter="link",
+                restrict_sr=bool(self.subreddit), time_filter=time_filter,
+                raw_json=True, limit=limit,
+            )
         else:
             valid_sorts = ("new", "hot", "top", "rising", "controversial")
             if sort not in valid_sorts:
                 sort = "new"
-            url = (
-                f"https://old.reddit.com/r/{self.subreddit}/{sort}.json"
-                f"?raw_json=1"
-                f"&limit={limit}"
-                f"&t={time_filter}"
+            path = f"/r/{self.subreddit}/{sort}.json"
+            url = self._build_reddit_base_url(
+                path=path, time_filter=time_filter, raw_json=True, limit=limit,
             )
 
         if after:
@@ -506,29 +514,18 @@ class RedditSpider(scrapy.Spider):
         limit = limit or int(getattr(self, "limit", 10))
         time_filter = self._calculate_time_filter()
         if self._has_query:
-            if self.subreddit:
-                url = (
-                    f"https://old.reddit.com/r/{self.subreddit}/search"
-                    f"?q={quote_plus(query)}"
-                    f"&sort=new"
-                    f"&type=link"
-                    f"&restrict_sr=on"
-                    f"&t={time_filter}"
-                )
-            else:
-                url = (
-                    f"https://old.reddit.com/search"
-                    f"?q={quote_plus(query)}"
-                    f"&sort=new"
-                    f"&type=link"
-                    f"&restrict_sr=off"
-                    f"&t={time_filter}"
-                )
+            path = f"/r/{self.subreddit}/search" if self.subreddit else "/search"
+            url = self._build_reddit_base_url(
+                path=path, query=query, sort="new", type_filter="link",
+                restrict_sr=bool(self.subreddit), time_filter=time_filter,
+            )
         else:
             if self.sort == "new":
-                url = f"https://old.reddit.com/r/{self.subreddit}/new?sort=new"
+                path = f"/r/{self.subreddit}/new"
+                url = self._build_reddit_base_url(path=path, sort="new")
             else:
-                url = f"https://old.reddit.com/r/{self.subreddit}/"
+                path = f"/r/{self.subreddit}/"
+                url = self._build_reddit_base_url(path=path)
         return scrapy.Request(
             url,
             callback=self.parse,

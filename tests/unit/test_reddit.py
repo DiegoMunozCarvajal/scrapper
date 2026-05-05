@@ -643,6 +643,14 @@ class TestRedditSpider:
         spider.subreddit = "learnpython"
         assert spider._cache_key == "learnpython:python"
 
+    def test_cache_key_sort_only_no_subreddit(self):
+        spider = self._make_spider()
+        spider.subreddit = None
+        spider.query = None
+        spider._has_query = False
+        spider.sort = "top"
+        assert spider._cache_key == "sort=top"
+
     def test_build_html_search_request_with_subreddit(self):
         spider = self._make_spider()
         spider.query = "async"
