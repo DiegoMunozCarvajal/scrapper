@@ -37,7 +37,7 @@ check_scrapyd() {
 
 check_pending() {
     local pending
-    pending=$(curl -s "$SCRAPYD_URL/daemonstatus.json" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','pending'))" 2>/dev/null) || pending="?"
+    pending=$(curl -s "$SCRAPYD_URL/daemonstatus.json" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pending', 0))" 2>/dev/null) || pending="?"
 
     if [[ "$pending" =~ ^[0-9]+$ ]] && (( pending > 100 )); then
         send_alert "High pending jobs: $pending"
