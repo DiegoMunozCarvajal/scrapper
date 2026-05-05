@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS posts (
     score         INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     published_at  TIMESTAMPTZ,
+    thumbnail     TEXT,
+    link_flair    TEXT,
+    domain        TEXT,
+    nsfw          BOOLEAN DEFAULT FALSE,
+    is_self_post  BOOLEAN DEFAULT FALSE,
+    permalink     TEXT,
     quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
     scrape_job_id INTEGER REFERENCES scrape_jobs(id),
@@ -110,51 +116,51 @@ ALTER TABLE scraped_pages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scrape_jobs ENABLE ROW LEVEL SECURITY;
 
--- Public read access (anyone with project URL can read)
+-- Public read access (only via anon/authenticated roles)
 DO $$ BEGIN
-    CREATE POLICY "Public can read posts" ON posts FOR SELECT USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Public can read posts" ON posts;
+    CREATE POLICY "Public can read posts" ON posts FOR SELECT TO anon, authenticated USING (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Public can read products" ON products FOR SELECT USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Public can read products" ON products;
+    CREATE POLICY "Public can read products" ON products FOR SELECT TO anon, authenticated USING (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Public can read scraped_pages" ON scraped_pages FOR SELECT USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Public can read scraped_pages" ON scraped_pages;
+    CREATE POLICY "Public can read scraped_pages" ON scraped_pages FOR SELECT TO anon, authenticated USING (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Public can read sites" ON sites FOR SELECT USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Public can read sites" ON sites;
+    CREATE POLICY "Public can read sites" ON sites FOR SELECT TO anon, authenticated USING (true);
 END $$;
 
 -- Service role full access (for scraping pipeline)
 DO $$ BEGIN
-    CREATE POLICY "Service can do anything with posts" ON posts FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Service can do anything with posts" ON posts;
+    CREATE POLICY "Service can do anything with posts" ON posts FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Service can do anything with products" ON products FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Service can do anything with products" ON products;
+    CREATE POLICY "Service can do anything with products" ON products FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Service can do anything with scraped_pages" ON scraped_pages FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Service can do anything with scraped_pages" ON scraped_pages;
+    CREATE POLICY "Service can do anything with scraped_pages" ON scraped_pages FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Service can do anything with sites" ON sites FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Service can do anything with sites" ON sites;
+    CREATE POLICY "Service can do anything with sites" ON sites FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 DO $$ BEGIN
-    CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
+    DROP POLICY IF EXISTS "Service can do anything with scrape_jobs" ON scrape_jobs;
+    CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 -- ── Migrations (idempotent) ─────────────────────
@@ -165,3 +171,11 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';
 -- Add image_url and category columns (v0.5+)
 ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS category TEXT;
+
+-- Add Reddit metadata columns emitted by PostItem (v0.6+)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS thumbnail TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_flair TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS domain TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS nsfw BOOLEAN DEFAULT FALSE;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_self_post BOOLEAN DEFAULT FALSE;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS permalink TEXT;
