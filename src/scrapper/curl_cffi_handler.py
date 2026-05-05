@@ -1,7 +1,8 @@
 import os
 
 from loguru import logger
-from scrapy.http import HtmlResponse
+from scrapy.http import Headers
+from scrapy.responsetypes import responsetypes
 from .stealth_handler import ScrapyPlaywrightStealthDownloadHandler
 
 
@@ -30,16 +31,34 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
 
         def _do_request():
             try:
-                resp = curl_requests.get(
-                    request.url,
-                    headers=dict(request.headers),
-                    impersonate=impersonate,
-                    timeout=30,
+                headers = request.headers.to_unicode_dict()
+                timeout = request.meta.get(
+                    "download_timeout",
+                    self._crawler.settings.getfloat("DOWNLOAD_TIMEOUT", 30),
                 )
-                return HtmlResponse(
+                kwargs = {
+                    "method": request.method,
+                    "url": request.url,
+                    "headers": headers,
+                    "impersonate": impersonate,
+                    "timeout": timeout,
+                }
+                if request.body:
+                    kwargs["data"] = request.body
+                if request.meta.get("proxy"):
+                    kwargs["proxy"] = request.meta["proxy"]
+
+                resp = curl_requests.request(**kwargs)
+                response_headers = Headers(resp.headers)
+                respcls = responsetypes.from_args(
+                    headers=response_headers,
+                    url=str(resp.url),
+                    body=resp.content,
+                )
+                return respcls(
                     url=str(resp.url),
                     status=resp.status_code,
-                    headers=dict(resp.headers),
+                    headers=response_headers,
                     body=resp.content,
                     request=request,
                 )
