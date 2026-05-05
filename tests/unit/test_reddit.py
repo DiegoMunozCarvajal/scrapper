@@ -59,7 +59,7 @@ class TestRedditSpider:
         assert item["comment_count"] == 1234
         assert item["title"] == "Test Post Title"
         assert item["author"] == "u_testuser"
-        assert item["published_at"] == "2026-04-15T10:30:00Z"
+        assert item["published_at"] == "2026-04-15T10:30:00+00:00"
         assert item["metadata"]["subreddit"] == "test"
         assert isinstance(item["metadata"]["top_comments"], list)
 
@@ -1303,3 +1303,23 @@ class TestRedditSpider:
     def test_normalize_post_url_empty(self):
         spider = self._make_spider()
         assert spider._normalize_post_url("") == ""
+
+    def test_normalize_published_at_with_tz(self):
+        spider = self._make_spider()
+        result = spider._normalize_published_at("2026-05-04T10:30:00Z")
+        assert result == "2026-05-04T10:30:00+00:00"
+
+    def test_normalize_published_at_without_tz(self):
+        spider = self._make_spider()
+        result = spider._normalize_published_at("2026-05-04T10:30:00")
+        assert "+00:00" in result
+
+    def test_normalize_published_at_none(self):
+        spider = self._make_spider()
+        assert spider._normalize_published_at(None) is None
+        assert spider._normalize_published_at("") is None
+
+    def test_normalize_published_at_invalid(self):
+        spider = self._make_spider()
+        result = spider._normalize_published_at("not-a-date")
+        assert result == "not-a-date"

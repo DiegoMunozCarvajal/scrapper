@@ -523,6 +523,19 @@ class RedditSpider(scrapy.Spider):
         except Exception:
             return False
 
+    @staticmethod
+    def _normalize_published_at(raw_date):
+        """Convert a date string to ISO 8601 with UTC timezone."""
+        if not raw_date:
+            return None
+        try:
+            dt = date_parser.parse(raw_date)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+        except Exception:
+            return raw_date  # Return as-is if parsing fails
+
     def _json_request_error(self, failure):
         self.logger.warning(
             f"JSON request failed ({failure.value}), falling through to full search"
@@ -1139,7 +1152,7 @@ class RedditSpider(scrapy.Spider):
             content=content,
             score=score,
             comment_count=comment_count,
-            published_at=post_time_str,
+            published_at=self._normalize_published_at(post_time_str),
             query=response.meta.get("query"),
             strategy=response.meta.get("strategy", "unknown"),
             subreddit=subreddit_name,
