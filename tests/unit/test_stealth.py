@@ -1,5 +1,9 @@
+import json
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from scrapy import Request
 
 
 class TestStealthHandler:
@@ -21,14 +25,6 @@ class TestStealthHandler:
         with patch.dict(os.environ, {"PLAYWRIGHT_HUMAN_SIMULATION": "true"}):
             result = os.getenv("PLAYWRIGHT_HUMAN_SIMULATION", "true").lower() in ("true", "1", "yes")
             assert result is True
-
-
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-from scrapy import Request
 
 
 @pytest.mark.asyncio

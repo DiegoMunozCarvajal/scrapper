@@ -1,3 +1,6 @@
+from scrapy import Request
+from scrapy.http import Response
+from scrapy.settings import Settings
 from scrapper.middlewares import (
     ProxyRotationMiddleware,
     UARotationMiddleware,
@@ -86,11 +89,6 @@ class TestRetryWithBackoffMiddleware:
     def test_retry_middleware_has_expected_methods(self):
         assert hasattr(RetryWithBackoffMiddleware, "process_response")
         assert hasattr(RetryWithBackoffMiddleware, "process_exception")
-
-
-from scrapy import Request
-from scrapy.http import Response
-from scrapy.settings import Settings
 
 
 class FakeStats:

@@ -2,6 +2,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 from scrapy import Request
+from scrapy.http import TextResponse
 from twisted.internet.defer import Deferred
 
 
@@ -40,9 +41,6 @@ def test_playwright_request_delegates_to_parent():
         mock_parent.assert_called_once()
 
     del os.environ["CURL_CFFI_ENABLED"]
-
-
-from scrapy.http import TextResponse
 
 
 def test_curl_cffi_preserves_method_body_headers_proxy_and_timeout(monkeypatch):

@@ -1,3 +1,7 @@
+import json
+
+from scrapy import Request
+from scrapy.http import TextResponse
 from scrapper.spiders.hotmart import HotmartSpider, _parse_price, _parse_review_count
 
 
@@ -34,18 +38,13 @@ class TestHotmartSpider:
         assert result == 0
 
 
-import json
-from scrapy.http import TextResponse
-from scrapy import Request
-
-
 def test_review_count_with_thousands_separator():
     assert _parse_review_count("1,234 reviews") == 1234
     assert _parse_review_count("1.234 avaliações") == 1234
 
 
 def test_start_request_installs_api_interceptor_before_navigation():
-    from scrapper.spiders.hotmart import HotmartSpider, _install_api_interceptor
+    from scrapper.spiders.hotmart import HotmartSpider
 
     spider = HotmartSpider()
     spider._api_endpoint_cache = None
