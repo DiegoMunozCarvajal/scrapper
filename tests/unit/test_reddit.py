@@ -602,6 +602,46 @@ class TestRedditSpider:
         items = list(spider.parse_pullpush(response))
         assert len(items) == 0
 
+    def test_parse_pullpush_tracks_latest_published(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {
+            "query": "test", "limit": 10, "pullpush_page": 1,
+            "pullpush_size": 25, "date_from": None, "date_to": None,
+            "scraped_count": 0,
+        }
+        response.text = json.dumps({
+            "data": [{
+                "title": "Newest", "selftext": "Body",
+                "permalink": "/r/t/comments/a/", "author": "u",
+                "created_utc": 1746500000.0, "score": 1, "num_comments": 0,
+            }]
+        })
+        list(spider.parse_pullpush(response))
+        assert spider._latest_published is not None
+
+    def test_parse_pullpush_pagination_uses_minus_one(self):
+        spider = self._make_spider()
+        response = MagicMock()
+        response.meta = {
+            "query": "test", "limit": 100, "pullpush_page": 1,
+            "pullpush_size": 25, "date_from": None, "date_to": None,
+            "scraped_count": 0,
+        }
+        posts = []
+        for i in range(25):
+            posts.append({
+                "title": f"Post {i}", "selftext": f"Body {i}",
+                "permalink": f"/r/t/comments/{i}/", "author": f"u{i}",
+                "created_utc": 1746403200.0 + i,
+                "score": 1, "num_comments": 0,
+            })
+        response.text = json.dumps({"data": posts})
+        items = list(spider.parse_pullpush(response))
+        # Find the pagination request
+        req = next(it for it in items if isinstance(it, scrapy.Request))
+        assert "before=1746403199" in req.url
+
     def test_pullpush_error_falls_back(self):
         spider = self._make_spider()
         spider.query = "test"

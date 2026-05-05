@@ -675,6 +675,9 @@ class RedditSpider(scrapy.Spider):
                 else None
             )
 
+            if published_at:
+                self._track_latest_published(published_at)
+
             scraped_count += 1
             yield self._make_post_item(
                 title=title,
@@ -711,7 +714,7 @@ class RedditSpider(scrapy.Spider):
             yield self._build_pullpush_request(
                 date_from=date_from,
                 date_to=date_to,
-                before=min_created_utc,
+                before=min_created_utc - 1,
                 page=page + 1,
                 scraped_count=scraped_count,
             )
