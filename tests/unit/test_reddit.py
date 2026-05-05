@@ -1236,3 +1236,22 @@ class TestRedditSpider:
             mock_dt.now.return_value = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
             mock_dt.timezone = timezone
             assert spider._calculate_time_filter() == "day"
+
+    def test_normalize_post_url_absolute(self):
+        spider = self._make_spider()
+        assert spider._normalize_post_url("https://old.reddit.com/r/test/comments/abc") == \
+            "https://old.reddit.com/r/test/comments/abc"
+
+    def test_normalize_post_url_relative(self):
+        spider = self._make_spider()
+        assert spider._normalize_post_url("/r/test/comments/abc") == \
+            "https://old.reddit.com/r/test/comments/abc"
+
+    def test_normalize_post_url_protocol_relative(self):
+        spider = self._make_spider()
+        assert spider._normalize_post_url("//old.reddit.com/r/test/comments/abc") == \
+            "https://old.reddit.com/r/test/comments/abc"
+
+    def test_normalize_post_url_empty(self):
+        spider = self._make_spider()
+        assert spider._normalize_post_url("") == ""

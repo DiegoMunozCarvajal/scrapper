@@ -67,6 +67,17 @@ class RedditSpider(scrapy.Spider):
         else:
             self._has_query = True
 
+    @staticmethod
+    def _normalize_post_url(url):
+        """Normalize a Reddit URL: ensure https protocol and full old.reddit.com domain."""
+        if not url:
+            return ""
+        if url.startswith("//"):
+            return f"https:{url}"
+        if not url.startswith("http"):
+            return f"https://old.reddit.com{url}"
+        return url
+
     @property
     def _cache_key(self):
         if self._has_query:
@@ -425,11 +436,7 @@ class RedditSpider(scrapy.Spider):
         )
 
         permalink = post_data.get("permalink", "")
-        post_url = (
-            f"https://old.reddit.com{permalink}"
-            if permalink.startswith("/")
-            else permalink
-        )
+        post_url = self._normalize_post_url(permalink)
 
         if published_at:
             self._track_latest_published(published_at)
@@ -637,11 +644,7 @@ class RedditSpider(scrapy.Spider):
             if min_created_utc is None or created_utc < min_created_utc:
                 min_created_utc = created_utc
 
-            post_url = (
-                f"https://old.reddit.com{permalink}"
-                if permalink.startswith("/")
-                else permalink
-            )
+            post_url = self._normalize_post_url(permalink)
 
             published_at = (
                 datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
@@ -966,11 +969,7 @@ class RedditSpider(scrapy.Spider):
                 return
 
             title = json_data.get("title", "").strip()
-            post_url = response.url
-            if post_url.startswith("//"):
-                post_url = f"https:{post_url}"
-            elif not post_url.startswith("http"):
-                post_url = f"https://old.reddit.com{post_url}"
+            post_url = self._normalize_post_url(response.url)
 
             if not post_url or not title:
                 self.logger.warning(f"Skipping post with no URL/title: {post_url}")
@@ -1070,11 +1069,7 @@ class RedditSpider(scrapy.Spider):
             first_comment = comments[0]
             top_comment = "".join(first_comment.css("*::text").getall()).strip()
 
-        post_url = response.url
-        if post_url.startswith("//"):
-            post_url = f"https:{post_url}"
-        elif not post_url.startswith("http"):
-            post_url = f"https://old.reddit.com{post_url}"
+        post_url = self._normalize_post_url(response.url)
 
         score_text = (
             response.css("div.score.unvoted::text").get("")
