@@ -94,8 +94,9 @@ class LLMExtractor:
         return chunks
 
     def _cache_key(self, site, query, html):
-        prefix = _strip_dynamic_html(html[:4000] if len(html) > 4000 else html)
-        raw = f"{site}:{query}:{prefix}"
+        normalized_html = _strip_dynamic_html(html)
+        html_hash = hashlib.sha256(normalized_html.encode()).hexdigest()
+        raw = f"{site}:{query}:{html_hash}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def _validate_items(self, items, item_class):

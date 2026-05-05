@@ -103,3 +103,14 @@ def test_chunk_html_splits_large_content():
     big_html = "<div>" + "x" * 5000 + "</div>"
     chunks = extractor._chunk_html(big_html, max_chars=2000)
     assert len(chunks) > 1
+
+
+def test_cache_key_uses_full_normalized_html():
+    with patch("scrapper.llm_extractor.OpenAI"):
+        extractor = LLMExtractor()
+
+    prefix = "<html>" + ("x" * 5000)
+    html_a = prefix + "<article>A</article></html>"
+    html_b = prefix + "<article>B</article></html>"
+
+    assert extractor._cache_key("generic", "query", html_a) != extractor._cache_key("generic", "query", html_b)
