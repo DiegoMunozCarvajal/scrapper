@@ -86,3 +86,57 @@ class TestRetryWithBackoffMiddleware:
     def test_retry_middleware_has_expected_methods(self):
         assert hasattr(RetryWithBackoffMiddleware, "process_response")
         assert hasattr(RetryWithBackoffMiddleware, "process_exception")
+
+
+from scrapy import Request
+from scrapy.http import Response
+from scrapy.settings import Settings
+
+
+class FakeStats:
+    def inc_value(self, *args, **kwargs):
+        pass
+
+
+class FakeCrawlerForRetry:
+    settings = Settings({"RETRY_TIMES": 1, "RETRY_PRIORITY_ADJUST": -1})
+    stats = FakeStats()
+
+
+class FakeSpiderForRetry:
+    crawler = FakeCrawlerForRetry()
+
+
+def test_retry_signature_matches_scrapy_215():
+    mw = RetryWithBackoffMiddleware(FakeCrawlerForRetry().settings)
+    mw.crawler = FakeCrawlerForRetry()
+    mw.crawler.spider = FakeSpiderForRetry()
+    retry_request = mw._retry(Request("https://example.com"), "500 Internal Server Error")
+    assert retry_request is not None
+    assert retry_request.meta["retry_times"] == 1
+
+
+def test_process_response_retries_on_500():
+    mw = RetryWithBackoffMiddleware(FakeCrawlerForRetry().settings)
+    mw.crawler = FakeCrawlerForRetry()
+    mw.crawler.spider = FakeSpiderForRetry()
+    request = Request("https://example.com")
+    response = Response("https://example.com", status=500, request=request)
+
+    result = mw.process_response(request=request, response=response, spider=mw.crawler.spider)
+
+    assert isinstance(result, Request)
+    assert result.meta["retry_times"] == 1
+    assert result.meta["retry_delay"] == 1
+
+
+def test_process_response_passes_through_200():
+    mw = RetryWithBackoffMiddleware(FakeCrawlerForRetry().settings)
+    mw.crawler = FakeCrawlerForRetry()
+    mw.crawler.spider = FakeSpiderForRetry()
+    request = Request("https://example.com")
+    response = Response("https://example.com", status=200, request=request)
+
+    result = mw.process_response(request=request, response=response, spider=mw.crawler.spider)
+
+    assert result is response
