@@ -25,8 +25,3 @@ substitutions:
   _REPO: scrapper
   _IMAGE: scraper
   _TAG: "latest"
-
-options:
-  logging: CLOUD_LOGGING_ONLY
-
-machineType: 'E2_HIGHCPU_4'

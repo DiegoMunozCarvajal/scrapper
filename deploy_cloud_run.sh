@@ -194,13 +194,18 @@ gcloud builds submit "${SCRIPT_DIR}" \
     --project="$PROJECT_ID" \
     --substitutions="_REGION=${REGION},_REPO=${REPO_NAME},_IMAGE=${IMAGE_NAME},_TAG=${VERSION_TAG}" \
     || {
-        log_warn "cloudbuild.yaml no encontrado o falló, usando build directo con Dockerfile.cloudrun..."
+        log_warn "cloudbuild.yaml falló, usando build directo..."
+        # Build directo: renombramos temporalmente Dockerfile.cloudrun como Dockerfile
+        cp "${SCRIPT_DIR}/Dockerfile.cloudrun" "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp"
+        mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.local"
+        mv "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp" "${SCRIPT_DIR}/Dockerfile"
         gcloud builds submit "${SCRIPT_DIR}" \
             --tag "$IMAGE_TAG_VERSIONED" \
             --project="$PROJECT_ID" \
-            --timeout="20m" \
-            -- \
-            -f Dockerfile.cloudrun
+            --timeout="20m"
+        # Restaurar nombres originales
+        mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.cloudrun"
+        mv "${SCRIPT_DIR}/Dockerfile.local" "${SCRIPT_DIR}/Dockerfile"
     }
 
 # ── Leer spiders de queries.json ──
