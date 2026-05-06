@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+
+# Dockerfile optimizado para Google Cloud Run Jobs.
+# No incluye Scrapyd, crond, ni healthchecks — es un contenedor one-off.
+
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HEADLESS=true \
+    PLAYWRIGHT_HUMAN_SIMULATION=true \
+    RAG_EXPORT_ENABLED=false \
+    COOKIE_PERSIST_ENABLED=false
+
+WORKDIR /app
+
+# ── System packages mínimas ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies ──
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Playwright: deps de sistema + Chromium ──
+RUN playwright install-deps chromium && \
+    playwright install chromium
+
+# ── Código fuente ──
+COPY pyproject.toml setup.py ./
+COPY src/ src/
+COPY queries.json cloud_run_runner.py ./
+RUN pip install .
+
+# Entrypoint: ejecuta el runner y sale
+ENTRYPOINT ["python", "cloud_run_runner.py"]
