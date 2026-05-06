@@ -1,6 +1,6 @@
 {
   "reddit": {
-    "schedule": "*/30 * * * *",
+    "schedule": "0 10,22 * * *",
     "cloud_run": {
       "cpu": 1,
       "memory": "1Gi",
@@ -23,29 +23,6 @@
       { "subreddit": "Tinder", "limit": 50 },
       { "subreddit": "hingeapp", "limit": 50 },
       { "subreddit": "OkCupid", "limit": 50 }
-    ]
-  },
-  "hotmart": {
-    "schedule": "0 8,20 * * *",
-    "cloud_run": {
-      "cpu": 1,
-      "memory": "2Gi",
-      "timeout": "20m"
-    },
-    "queries": [
-      { "query": "marketing", "limit": 5 },
-      { "query": "desarrollo web", "limit": 5 }
-    ]
-  },
-  "generic": {
-    "schedule": "0 */6 * * *",
-    "cloud_run": {
-      "cpu": 1,
-      "memory": "1Gi",
-      "timeout": "20m"
-    },
-    "queries": [
-      { "url": "https://books.toscrape.com", "type": "listing" }
     ]
   }
 }
