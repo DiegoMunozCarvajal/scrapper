@@ -1,0 +1,8 @@
+# Asegura que estos archivos SIEMPRE se incluyan en el build context de Cloud Build
+!Dockerfile.cloudrun
+!queries.json
+!cloud_run_runner.py
+!pyproject.toml
+!setup.py
+!requirements.txt
+!src/
