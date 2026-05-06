@@ -70,7 +70,7 @@ RUN playwright install chromium
 # Copiar código fuente con permisos correctos
 USER root
 COPY --chown=appuser:appgroup src/ src/
-COPY --chown=appuser:appgroup queries.json cloud_run_runner.py ./
+COPY --chown=appuser:appgroup queries.json cloud_run_runner.py scrapy.cfg ./
 USER appuser
 
 # Entrypoint: ejecuta el runner y sale
