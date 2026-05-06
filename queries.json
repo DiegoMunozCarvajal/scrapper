@@ -1,0 +1,39 @@
+{
+  "reddit": {
+    "schedule": "*/30 * * * *",
+    "cloud_run": {
+      "cpu": 1,
+      "memory": "2Gi",
+      "timeout": "20m"
+    },
+    "queries": [
+      { "query": "dating", "limit": 10 },
+      { "query": "POA", "limit": 5 },
+      { "query": "getting her number", "limit": 5 },
+      { "query": "Talking to girls", "limit": 5 }
+    ]
+  },
+  "hotmart": {
+    "schedule": "0 8,20 * * *",
+    "cloud_run": {
+      "cpu": 1,
+      "memory": "2Gi",
+      "timeout": "20m"
+    },
+    "queries": [
+      { "query": "marketing", "limit": 5 },
+      { "query": "desarrollo web", "limit": 5 }
+    ]
+  },
+  "generic": {
+    "schedule": "0 */6 * * *",
+    "cloud_run": {
+      "cpu": 1,
+      "memory": "2Gi",
+      "timeout": "20m"
+    },
+    "tasks": [
+      { "url": "https://books.toscrape.com", "type": "listing" }
+    ]
+  }
+}
