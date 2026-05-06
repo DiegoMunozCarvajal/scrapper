@@ -1,10 +1,10 @@
 {
   "reddit": {
-    "schedule": "0 10,22 * * *",
+    "schedule": "0 10 * * *",
     "cloud_run": {
       "cpu": 1,
       "memory": "1Gi",
-      "timeout": "30m"
+      "timeout": "20m"
     },
     "queries": [
       { "subreddit": "seduction", "limit": 50 },
@@ -14,7 +14,17 @@
       { "subreddit": "Flirting", "limit": 50 },
       { "subreddit": "socialskills", "limit": 50 },
       { "subreddit": "OnlineDating", "limit": 50 },
-      { "subreddit": "AskMenAdvice", "limit": 50 },
+      { "subreddit": "AskMenAdvice", "limit": 50 }
+    ]
+  },
+  "reddit-evening": {
+    "schedule": "0 22 * * *",
+    "cloud_run": {
+      "cpu": 1,
+      "memory": "1Gi",
+      "timeout": "20m"
+    },
+    "queries": [
       { "subreddit": "AskWomen", "limit": 50 },
       { "subreddit": "AskWomenNoCensor", "limit": 50 },
       { "subreddit": "askwomenadvice", "limit": 50 },
