@@ -7,7 +7,6 @@ Diseñado para entornos SIN disco persistente (Cloud Run Jobs).
 Uso:
     python cloud_run_runner.py reddit           # ejecuta solo reddit
     python cloud_run_runner.py hotmart          # ejecuta solo hotmart
-    python cloud_run_runner.py                  # ejecuta todos los spiders
     python cloud_run_runner.py reddit --dry-run # muestra sin ejecutar
 
 Variables de entorno requeridas:
@@ -93,6 +92,10 @@ def main():
     parser.add_argument("spider", nargs="?", help="Spider a ejecutar (reddit, hotmart, generic)")
     parser.add_argument("--dry-run", action="store_true", help="Solo muestra, no ejecuta")
     args_cli = parser.parse_args()
+
+    if not args_cli.spider:
+        _log("ERROR: Debes especificar un spider. Uso: python cloud_run_runner.py <spider>")
+        sys.exit(1)
 
     # Validar variables requeridas
     required = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY"]
