@@ -109,10 +109,20 @@ class GenericSpider(scrapy.Spider):
             self.LLM_PROMPT = GENERIC_PROMPT
 
         count = 0
-        for item in llm_fallback(self, response, GenericItem):
-            item["site"] = response.meta["site"]
+
+        extracted = self._extract_generic_selectors(response)
+        for item_data in extracted:
+            if count >= limit:
+                break
+            item_data["site"] = response.meta["site"]
             count += 1
-            yield item
+            yield GenericItem(item_data)
+
+        if count == 0:
+            for item in llm_fallback(self, response, GenericItem):
+                item["site"] = response.meta["site"]
+                count += 1
+                yield item
 
         if count == 0:
             if not response.meta.get("_playwright_retry"):
@@ -149,6 +159,65 @@ class GenericSpider(scrapy.Spider):
             page_method = _click_load_more_sp if pagination_type == "load_more" else _scroll_infinite_sp
             self.logger.info("Detected %s on %s, switching to Playwright", pagination_type, response.url)
             yield self._playwright_paginated_request(response, page_method, page_depth, remaining, max_pages)
+
+    def _extract_generic_selectors(self, response):
+        """Try HTML/CSS extraction before falling back to LLM.
+
+        Only extracts items when meaningful content elements are found
+        (articles, main content, listing items, multiple paragraphs).
+        """
+        from urllib.parse import urljoin
+
+        items = []
+
+        title = (
+            response.css("meta[property='og:title']::attr(content)").get("")
+            or response.css("h1::text").get("")
+            or ""
+        ).strip()
+
+        content_paragraphs = [
+            p.strip() for p in response.css(
+                "article p::text, main p::text, .content p::text, .post p::text"
+            ).getall()
+            if p.strip()
+        ]
+
+        description = (
+            response.css("meta[name='description']::attr(content)").get("")
+            or response.css("meta[property='og:description']::attr(content)").get("")
+            or ""
+        ).strip()
+
+        if content_paragraphs and len(content_paragraphs) >= 2:
+            items.append({
+                "url": response.url,
+                "title": title or response.url,
+                "content": " ".join(content_paragraphs),
+            })
+
+        listing_items = response.css(
+            ".listing a[href], .results a[href], .items a[href], "
+            "ul.products li a[href], .product-list a[href]"
+        )
+        for link in listing_items[:20]:
+            href = link.css("::attr(href)").get("")
+            text = (link.css("::text").get("") or "").strip()
+            if href and text and len(text) > 10:
+                items.append({
+                    "url": urljoin(response.url, href),
+                    "title": text,
+                    "content": "",
+                })
+
+        if not items and description:
+            items.append({
+                "url": response.url,
+                "title": title or response.url,
+                "content": description,
+            })
+
+        return items
 
     def _next_page_request(self, response, next_url, page_depth, limit, max_pages):
         meta = response.meta.copy()

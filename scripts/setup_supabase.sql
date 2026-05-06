@@ -179,3 +179,19 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS domain TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS nsfw BOOLEAN DEFAULT FALSE;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_self_post BOOLEAN DEFAULT FALSE;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS permalink TEXT;
+
+-- ── Distributed locks for Cloud Run Jobs (v0.7+) ─────────────────────
+CREATE TABLE IF NOT EXISTS spider_locks (
+    spider        TEXT PRIMARY KEY,
+    locked_at     TIMESTAMPTZ,
+    locked_until  TIMESTAMPTZ,
+    status        TEXT DEFAULT 'running',
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE spider_locks ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Service can do anything with spider_locks" ON spider_locks;
+    CREATE POLICY "Service can do anything with spider_locks" ON spider_locks FOR ALL TO service_role USING (true) WITH CHECK (true);
+END $$;

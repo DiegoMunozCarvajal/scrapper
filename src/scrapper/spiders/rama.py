@@ -151,14 +151,14 @@ class RamaSpider(scrapy.Spider):
         finally:
             self.logger.info("Finished: %d items from %d pages", total_yielded, page_num)
             if download_tasks:
-                await asyncio.gather(*download_tasks, return_exceptions=True)
+                await asyncio.wait(download_tasks, timeout=30)
             await page_obj.close()
 
-    async def _errback_close_page(self, failure):
-        """Errback: close Playwright page on request failure."""
+    def _errback_close_page(self, failure):
         page = failure.request.meta.get("playwright_page")
         if page:
-            await page.close()
+            from twisted.internet import defer
+            defer.ensureDeferred(page.close())
 
     async def _download_via_page(self, page, item_data, download_dir):
         """Download providencia HTML via Playwright page (uses session cookies)."""

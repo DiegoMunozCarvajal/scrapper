@@ -39,7 +39,11 @@ class MetricsDashboard:
         if not metrics_path.exists():
             data = {"runs": [], "generated_at": datetime.now(timezone.utc).isoformat()}
         else:
-            data = json.loads(metrics_path.read_text())
+            try:
+                data = json.loads(metrics_path.read_text())
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f"Failed to read metrics.json: {e}, resetting")
+                data = {"runs": []}
             data["generated_at"] = datetime.now(timezone.utc).isoformat()
 
         html = _get_template().replace("__DATA__", json.dumps(data))

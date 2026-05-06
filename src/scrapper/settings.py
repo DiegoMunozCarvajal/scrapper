@@ -1,14 +1,9 @@
-import asyncio
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Python 3.12+ requires an explicit event loop before installing the reactor
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 BOT_NAME = "scrapper"
 
@@ -38,10 +33,19 @@ DOWNLOAD_HANDLERS = {
 }
 
 # Playwright config
+# Chromium args hardened for container environments (Cloud Run / Docker).
+# --disable-dev-shm-usage is critical because Docker limits /dev/shm to 64MB
+# and Cloud Run Jobs do not allow configuring shm_size.
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {
     "headless": os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
-    "args": ["--disable-blink-features=AutomationControlled"],
+    "args": [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",   # Prevent OOM crashes in containers
+        "--disable-gpu",             # No GPU available in Cloud Run
+        "--disable-setuid-sandbox",
+        "--no-sandbox",              # Required for non-root Docker execution
+    ],
 }
 PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 4
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000
@@ -131,4 +135,3 @@ COOKIE_LOAD_ENABLED = True
 COOKIE_DB_PATH = "cookies"
 
 DOWNLOAD_TIMEOUT = 30
-PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000

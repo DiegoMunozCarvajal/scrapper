@@ -122,7 +122,7 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                         f"Cookie save for context '{name}' failed: {t.exception()}"
                     ) if t.exception() else None
                 )
-            context.context.on("close", _schedule_cookie_save)
+            context.on("close", _schedule_cookie_save)
 
         return context
 

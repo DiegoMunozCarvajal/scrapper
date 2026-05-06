@@ -1,8 +1,9 @@
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 import feedparser
 import portalocker
@@ -131,23 +132,23 @@ class RedditSpider(scrapy.Spider):
             client = None
             try:
                 client = await create_async_client(supabase_url, supabase_key)
-                q = (
-                    client.table("posts")
-                    .select("scraped_at")
-                    .eq("site", "reddit")
-                )
+                q = client.table("posts").select("published_at").eq("site", "reddit")
                 if self._has_query:
                     q = q.eq("metadata->>'query'", self.query)
                 if self.subreddit:
                     q = q.eq("metadata->>'subreddit'", self.subreddit)
                 result = await (
-                    q.order("scraped_at", desc=True)
+                    q.order("published_at", desc=True)
                     .limit(1)
                     .execute()
                 )
                 if result.data:
-                    self.cutoff_date = result.data[0].get("scraped_at")
-                    self.logger.info(f"Incremental mode: cutoff date = {self.cutoff_date}")
+                    cutoff = result.data[0].get("published_at")
+                    if cutoff:
+                        self.cutoff_date = cutoff
+                        self.logger.info(
+                            f"Incremental mode: cutoff date = {self.cutoff_date}"
+                        )
             except Exception as e:
                 self.logger.warning(f"Could not load cutoff date: {e}")
             finally:
@@ -173,6 +174,8 @@ class RedditSpider(scrapy.Spider):
 
     def _load_local_cutoff_date(self):
         metrics_dir = self.settings.get("METRICS_DIR", "metrics")
+        if not isinstance(metrics_dir, (str, os.PathLike)):
+            metrics_dir = "metrics"
         cache_file = Path(metrics_dir) / "reddit_cutoff.json"
         self._cutoff_cache_path = cache_file
 
@@ -180,7 +183,7 @@ class RedditSpider(scrapy.Spider):
             return
 
         try:
-            with open(cache_file, "r") as f:
+            with open(cache_file, "r", encoding="utf-8") as f:
                 portalocker.lock(f, portalocker.LOCK_SH)
                 try:
                     data = json.load(f)
@@ -228,20 +231,19 @@ class RedditSpider(scrapy.Spider):
 
         self._cutoff_cache_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            data = {}
-            if self._cutoff_cache_path.exists():
-                with open(self._cutoff_cache_path, "r") as f:
-                    portalocker.lock(f, portalocker.LOCK_SH)
+            with open(self._cutoff_cache_path, "a+", encoding="utf-8") as f:
+                portalocker.lock(f, portalocker.LOCK_EX)
+                try:
+                    f.seek(0)
                     try:
                         data = json.load(f)
                     except json.JSONDecodeError:
-                        pass
-                    finally:
-                        portalocker.unlock(f)
-            data[self._cache_key] = latest
-            with open(self._cutoff_cache_path, "w") as f:
-                portalocker.lock(f, portalocker.LOCK_EX)
-                try:
+                        data = {}
+                    if not isinstance(data, dict):
+                        data = {}
+                    data[self._cache_key] = latest
+                    f.seek(0)
+                    f.truncate()
                     json.dump(data, f, indent=2)
                 finally:
                     portalocker.unlock(f)
@@ -276,9 +278,7 @@ class RedditSpider(scrapy.Spider):
             headers=_RSS_HEADERS,
         )
 
-    async def start(self):
-        await self._load_cutoff_date()
-
+    def _yield_initial_requests(self):
         yield scrapy.Request(
             "https://old.reddit.com/",
             callback=self._health_check,
@@ -289,25 +289,24 @@ class RedditSpider(scrapy.Spider):
 
         date_from = getattr(self, "date_from", None)
         date_to = getattr(self, "date_to", None)
-
         if date_from or date_to:
-            self.logger.info(
-                f"PullPush strategy: date_from={date_from}, date_to={date_to}"
-            )
             yield self._build_pullpush_request(date_from=date_from, date_to=date_to)
         else:
             yield self._build_json_request()
 
+    async def start(self):
+        await self._load_cutoff_date()
+        for req in self._yield_initial_requests():
+            yield req
+
     def start_requests(self):
-        """Synchronous fallback for Scrapy < 2.13 (when async start() is not supported)."""
-        yield scrapy.Request(
-            "https://old.reddit.com/",
-            callback=self._health_check,
-            errback=self._health_check_error,
-            dont_filter=True,
-            meta={"health_check": True},
-        )
-        yield self._build_json_request()
+        """Synchronous fallback for Scrapy < 2.13.
+
+        Supabase cutoff loading is async-only and runs via start() on Scrapy 2.13+.
+        This compatibility path can only load the local cutoff cache.
+        """
+        self._load_local_cutoff_date()
+        yield from self._yield_initial_requests()
 
     def _health_check(self, response):
         self.logger.info("Health check: old.reddit.com is reachable")
@@ -371,7 +370,8 @@ class RedditSpider(scrapy.Spider):
         posts = [p for p in children if p.get("kind") == "t3"]
 
         if not posts:
-            self.logger.info("JSON API: no posts found")
+            self.logger.info("JSON API: no posts found, falling through to fallback")
+            yield self._continue_to_full_search()
             return
 
         query = response.meta["query"]
@@ -407,29 +407,18 @@ class RedditSpider(scrapy.Spider):
                 continue
 
             count += 1
-            is_self = post_data.get("is_self", False)
-
-            post_url = (
-                f"https://old.reddit.com{permalink}"
-                if permalink.startswith("/")
-                else permalink
-            )
-
-            if is_self and not self.include_comments:
-                yield self._build_post_item_from_json(post_data, query)
-            else:
-                yield response.follow(
-                    post_url,
-                    callback=self.parse_post_page,
-                    errback=self._handle_post_error,
-                    meta={
-                        "query": query,
-                        "limit": limit,
-                        "strategy": "json_api",
-                        "_json_data": post_data,
-                    },
-                    headers=_SEARCH_HEADERS,
+            if self.include_comments:
+                comments_request = self._build_comments_request_from_json(
+                    post_data=post_data,
+                    query=query,
+                    strategy=response.meta.get("strategy", "json_api"),
                 )
+                if comments_request:
+                    yield comments_request
+                else:
+                    yield self._build_post_item_from_json(post_data, query)
+            else:
+                yield self._build_post_item_from_json(post_data, query)
 
         if count == start_count:
             if skipped_old > 0:
@@ -507,12 +496,55 @@ class RedditSpider(scrapy.Spider):
             link_flair=post_data.get("link_flair_text", ""),
             domain=post_data.get("domain", ""),
             nsfw=post_data.get("over_18", False),
-            is_self_post=True,
+            is_self_post=post_data.get("is_self", False),
             permalink=permalink,
             query=query,
             strategy="json_api",
             subreddit=post_data.get("subreddit", ""),
             post_id=post_data.get("id", ""),
+        )
+
+    def _build_comments_request_from_json(self, post_data, query, strategy="json_api"):
+        post_id = post_data.get("id", "")
+        if not post_id or post_data.get("num_comments", 0) <= 0:
+            return None
+
+        created_utc = post_data.get("created_utc", 0)
+        published_at = (
+            datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
+            if created_utc
+            else None
+        )
+        if published_at:
+            self._track_latest_published(published_at)
+
+        permalink = post_data.get("permalink", "")
+        post_fields = {
+            "site": self.site,
+            "url": self._normalize_post_url(permalink),
+            "title": post_data.get("title", ""),
+            "author": post_data.get("author", ""),
+            "content": post_data.get("selftext", ""),
+            "score": post_data.get("score", 0),
+            "comment_count": post_data.get("num_comments", 0),
+            "published_at": published_at,
+            "thumbnail": post_data.get("thumbnail", ""),
+            "link_flair": post_data.get("link_flair_text", ""),
+            "domain": post_data.get("domain", ""),
+            "nsfw": post_data.get("over_18", False),
+            "is_self_post": post_data.get("is_self", False),
+            "permalink": permalink,
+            "_query": query,
+            "_subreddit": post_data.get("subreddit", ""),
+            "_strategy": strategy,
+            "_post_id": post_id,
+        }
+        return scrapy.Request(
+            f"https://old.reddit.com/comments/{post_id}.json?limit=5&raw_json=1",
+            callback=self.parse_comments_json,
+            errback=self._handle_comments_error,
+            meta={"_post_fields": post_fields},
+            headers=_JSON_HEADERS,
         )
 
     def _is_past_cutoff(self, dt_value):
@@ -550,6 +582,38 @@ class RedditSpider(scrapy.Spider):
             return dt.isoformat()
         except Exception:
             return raw_date  # Return as-is if parsing fails
+
+    @staticmethod
+    def _parse_reddit_count(text):
+        if text is None:
+            return 0
+        value = str(text).strip().lower().replace(",", "")
+        if not value or value in {"•", "score hidden"}:
+            return 0
+
+        match = re.search(r"(\d+(?:\.\d+)?)\s*([km])?", value)
+        if not match:
+            return 0
+
+        number = float(match.group(1))
+        suffix = match.group(2)
+        if suffix == "k":
+            number *= 1_000
+        elif suffix == "m":
+            number *= 1_000_000
+        return int(number)
+
+    @staticmethod
+    def _selector_has_nsfw_marker(selector):
+        class_attr = selector.css("::attr(class)").get("") or ""
+        classes = {part.lower() for part in str(class_attr).split()}
+        if classes.intersection({"over18", "nsfw"}):
+            return True
+
+        marker_text = " ".join(
+            selector.css(".nsfw-stamp::text, .over18::text, span::text").getall()
+        ).lower()
+        return "nsfw" in marker_text or "over 18" in marker_text
 
     def _json_request_error(self, failure):
         self.logger.warning(
@@ -634,7 +698,7 @@ class RedditSpider(scrapy.Spider):
         if date_from:
             params["after"] = int(self._date_str_to_epoch(date_from))
 
-        url = _PULLPUSH_BASE + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        url = _PULLPUSH_BASE + "?" + urlencode(params)
 
         return scrapy.Request(
             url,
@@ -826,6 +890,7 @@ class RedditSpider(scrapy.Spider):
 
         cards_with_time = 0
         cards_skipped_old = 0
+        cards_skipped_nsfw = 0
 
         for card in cards:
             if count >= limit:
@@ -841,6 +906,14 @@ class RedditSpider(scrapy.Spider):
             if not title or not href:
                 continue
 
+            card_nsfw = self._selector_has_nsfw_marker(card)
+            if self.nsfw == "exclude" and card_nsfw:
+                cards_skipped_nsfw += 1
+                continue
+            if self.nsfw == "only" and not card_nsfw:
+                cards_skipped_nsfw += 1
+                continue
+
             post_time_str = card.css("time::attr(datetime)").get()
             if post_time_str:
                 cards_with_time += 1
@@ -853,12 +926,21 @@ class RedditSpider(scrapy.Spider):
                 href,
                 callback=self.parse_post_page,
                 errback=self._handle_post_error,
-                meta={"query": query, "limit": limit, "strategy": "html"},
+                meta={
+                    "query": query,
+                    "limit": limit,
+                    "strategy": "html",
+                    "_nsfw": card_nsfw,
+                },
                 headers=_SEARCH_HEADERS,
             )
 
         if count == start_count:
-            if cards_with_time > 0 and cards_with_time == cards_skipped_old:
+            if cards_skipped_nsfw > 0:
+                self.logger.info(
+                    f"All usable HTML results filtered by nsfw={self.nsfw}, stopping"
+                )
+            elif cards_with_time > 0 and cards_with_time == cards_skipped_old:
                 self.logger.info(
                     f"All {cards_with_time} dated results older than cutoff, stopping"
                 )
@@ -1093,7 +1175,15 @@ class RedditSpider(scrapy.Spider):
             self.logger.info(f"Stopping: post {post_time_str} older than cutoff {self.cutoff_date}")
             return
 
-        content = "".join(response.css("div.md *::text").getall()).strip()
+        main_content_parts = response.css(
+            "div.thing.link div.usertext-body div.md *::text"
+        ).getall()
+        if not isinstance(main_content_parts, list):
+            main_content_parts = []
+        content_parts = main_content_parts or response.css("div.md *::text").getall()
+        if not isinstance(content_parts, list):
+            content_parts = []
+        content = "".join(content_parts).strip()
 
         removed_indicators = (
             response.css("div.md::text").getall()
@@ -1121,20 +1211,10 @@ class RedditSpider(scrapy.Spider):
             or response.css("div.score::text").get("")
             or ""
         )
-        try:
-            score = int(score_text) if score_text else 0
-        except (ValueError, TypeError):
-            score = 0
+        score = self._parse_reddit_count(score_text)
 
         comment_text = response.css("a.comments::text").get("")
-        try:
-            comment_count = (
-                int(comment_text.replace(",", "").split()[0])
-                if comment_text and comment_text.split()
-                else 0
-            )
-        except (ValueError, IndexError):
-            comment_count = 0
+        comment_count = self._parse_reddit_count(comment_text)
 
         author = response.css("a.author::text").get("")
         title = response.css("a.title::text").get("")
@@ -1162,6 +1242,8 @@ class RedditSpider(scrapy.Spider):
         if len(url_parts_for_id) > 1:
             post_id = url_parts_for_id[1].split("/")[0]
 
+        nsfw = bool(response.meta.get("_nsfw")) or self._selector_has_nsfw_marker(response)
+
         yield self._make_post_item(
             title=title,
             url=post_url,
@@ -1174,6 +1256,7 @@ class RedditSpider(scrapy.Spider):
             strategy=response.meta.get("strategy", "unknown"),
             subreddit=subreddit_name,
             post_id=post_id,
+            nsfw=nsfw,
             top_comments=top_comments,
         )
 

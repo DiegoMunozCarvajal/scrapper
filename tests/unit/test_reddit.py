@@ -1,7 +1,9 @@
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
+import pytest
 import scrapy
 from scrapy.http import HtmlResponse
 
@@ -111,6 +113,25 @@ class TestRedditSpider:
         item = result[0]
         assert item["content"] == "Post body content here."
         assert item["url"] == url
+
+    def test_parse_post_page_prefers_main_post_content_over_comments(self):
+        spider = self._make_spider()
+        url = "https://old.reddit.com/r/Python/comments/abc123/test_post/"
+        response = self._make_response(
+            body="""
+            <html><body>
+              <a class="title">Test Title</a>
+              <div class="thing link">
+                <div class="usertext-body"><div class="md"><p>Main post only.</p></div></div>
+              </div>
+              <div class="commentarea"><div class="md"><p>Comment text.</p></div></div>
+            </body></html>
+            """,
+            url=url,
+        )
+        result = list(spider.parse_post_page(response))
+        assert len(result) == 1
+        assert result[0]["content"] == "Main post only."
 
     def test_parse_post_page_no_content(self):
         spider = self._make_spider()
@@ -393,6 +414,118 @@ class TestRedditSpider:
 
         results = list(spider.parse(response))
         assert len(results) == 0
+
+    def test_parse_html_fallback_applies_nsfw_only_filter(self):
+        spider = self._make_spider()
+        spider.nsfw = "only"
+
+        def make_card(title, href, class_attr):
+            card = MagicMock()
+
+            def card_css(selector):
+                m = MagicMock()
+                if selector == "a.search-title":
+                    title_el = MagicMock()
+
+                    def title_css(inner):
+                        inner_m = MagicMock()
+                        if inner == "::text":
+                            inner_m.get.return_value = title
+                        elif inner == "::attr(href)":
+                            inner_m.get.return_value = href
+                        return inner_m
+
+                    title_el.css.side_effect = title_css
+                    return title_el
+                if selector == "::attr(class)":
+                    m.get.return_value = class_attr
+                elif selector == "time::attr(datetime)":
+                    m.get.return_value = None
+                elif "span::text" in selector:
+                    m.getall.return_value = []
+                return m
+
+            card.css.side_effect = card_css
+            return card
+
+        sfw_card = make_card("SFW", "/r/test/comments/sfw/", "search-result-link")
+        nsfw_card = make_card("NSFW", "/r/test/comments/nsfw/", "search-result-link over18")
+
+        response = MagicMock()
+        response.url = "https://old.reddit.com/search?q=test"
+        response.meta = {"query": "test", "limit": 5, "count": 0}
+
+        def response_css(selector):
+            if selector == "div.search-result-link":
+                return [sfw_card, nsfw_card]
+            m = MagicMock()
+            m.get.return_value = None
+            return m
+
+        response.css.side_effect = response_css
+        response.follow.side_effect = lambda url, **kw: MagicMock(url=url, meta=kw.get("meta", {}))
+
+        results = list(spider.parse(response))
+
+        assert len(results) == 1
+        assert "/r/test/comments/nsfw/" in results[0].url
+        assert results[0].meta["_nsfw"] is True
+
+    def test_parse_html_fallback_applies_nsfw_exclude_filter(self):
+        spider = self._make_spider()
+        spider.nsfw = "exclude"
+
+        def make_card(title, href, class_attr):
+            card = MagicMock()
+
+            def card_css(selector):
+                m = MagicMock()
+                if selector == "a.search-title":
+                    title_el = MagicMock()
+
+                    def title_css(inner):
+                        inner_m = MagicMock()
+                        if inner == "::text":
+                            inner_m.get.return_value = title
+                        elif inner == "::attr(href)":
+                            inner_m.get.return_value = href
+                        return inner_m
+
+                    title_el.css.side_effect = title_css
+                    return title_el
+                if selector == "::attr(class)":
+                    m.get.return_value = class_attr
+                elif selector == "time::attr(datetime)":
+                    m.get.return_value = None
+                elif "span::text" in selector:
+                    m.getall.return_value = []
+                return m
+
+            card.css.side_effect = card_css
+            return card
+
+        sfw_card = make_card("SFW", "/r/test/comments/sfw/", "search-result-link")
+        nsfw_card = make_card("NSFW", "/r/test/comments/nsfw/", "search-result-link over18")
+
+        response = MagicMock()
+        response.url = "https://old.reddit.com/search?q=test"
+        response.meta = {"query": "test", "limit": 5, "count": 0}
+
+        def response_css(selector):
+            if selector == "div.search-result-link":
+                return [sfw_card, nsfw_card]
+            m = MagicMock()
+            m.get.return_value = None
+            return m
+
+        response.css.side_effect = response_css
+        response.follow.side_effect = lambda url, **kw: MagicMock(url=url, meta=kw.get("meta", {}))
+
+        results = list(spider.parse(response))
+
+        assert len(results) == 1
+        assert "/r/test/comments/sfw/" in results[0].url
+        assert results[0].meta["_nsfw"] is False
 
     def test_date_str_to_epoch(self):
         spider = self._make_spider()
@@ -746,6 +879,14 @@ class TestRedditSpider:
         req = spider._build_pullpush_request()
         assert "subreddit=" not in req.url
 
+    def test_build_pullpush_request_urlencodes_query(self):
+        spider = self._make_spider()
+        spider.query = "python async+c++"
+        req = spider._build_pullpush_request()
+        params = parse_qs(urlparse(req.url).query)
+        assert params["q"] == ["python async+c++"]
+        assert "q=python+async%2Bc%2B%2B" in req.url
+
     def test_parse_post_page_extracts_subreddit_from_url(self):
         spider = self._make_spider()
 
@@ -928,7 +1069,7 @@ class TestRedditSpider:
         assert item["permalink"] == "/r/test/comments/abc/self/"
         assert item["metadata"]["strategy"] == "json_api"
 
-    def test_parse_json_results_link_post_follows_detail(self):
+    def test_parse_json_results_link_post_emitted_directly(self):
         spider = self._make_spider()
         post_data = {
             "title": "Link Post",
@@ -957,7 +1098,22 @@ class TestRedditSpider:
 
         items = list(spider.parse_json_results(response))
         assert len(items) == 1
-        assert items[0].callback == spider.parse_post_page
+        assert isinstance(items[0], PostItem)
+        assert items[0]["title"] == "Link Post"
+        assert items[0]["is_self_post"] is False
+        response.follow.assert_not_called()
+
+    def test_parse_json_results_include_comments_uses_comments_json(self):
+        spider = self._make_spider()
+        spider.include_comments = True
+        response = self._make_json_search_response({
+            "children": [self._make_json_post_child(id="abc", num_comments=5)],
+        })
+        items = list(spider.parse_json_results(response))
+        assert len(items) == 1
+        assert isinstance(items[0], scrapy.Request)
+        assert items[0].url == "https://old.reddit.com/comments/abc.json?limit=5&raw_json=1"
+        assert items[0].callback == spider.parse_comments_json
 
     def test_parse_json_results_nsfw_exclude(self):
         spider = self._make_spider()
@@ -1040,9 +1196,11 @@ class TestRedditSpider:
 
     def test_parse_json_results_no_posts(self):
         spider = self._make_spider()
+        spider.settings.getbool.return_value = False
         response = self._make_json_search_response({"children": []})
         items = list(spider.parse_json_results(response))
-        assert len(items) == 0
+        assert len(items) == 1
+        assert isinstance(items[0], scrapy.Request)
 
     def test_parse_json_results_invalid_json(self):
         spider = self._make_spider()
@@ -1125,6 +1283,24 @@ class TestRedditSpider:
         assert item["metadata"]["subreddit"] == "test"
         assert item["metadata"]["id"] == "abc"
         assert item["published_at"] is not None
+
+    def test_build_post_item_from_json_preserves_link_post_type(self):
+        spider = self._make_spider()
+        post_data = {
+            "title": "Link Post",
+            "permalink": "/r/test/comments/abc/link/",
+            "author": "u_tester",
+            "score": 1,
+            "num_comments": 0,
+            "created_utc": 1746403200.0,
+            "selftext": "",
+            "domain": "example.com",
+            "is_self": False,
+            "subreddit": "test",
+            "id": "abc",
+        }
+        item = spider._build_post_item_from_json(post_data, "q")
+        assert item["is_self_post"] is False
 
     def test_build_post_item_from_json_tracks_latest(self):
         spider = self._make_spider()
@@ -1318,6 +1494,79 @@ class TestRedditSpider:
         spider = self._make_spider()
         assert spider._normalize_published_at(None) is None
         assert spider._normalize_published_at("") is None
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("1.2k", 1200),
+            ("3k", 3000),
+            ("1,234 comments", 1234),
+            ("score hidden", 0),
+            ("•", 0),
+            ("", 0),
+            (None, 0),
+        ],
+    )
+    def test_parse_reddit_count(self, raw, expected):
+        assert RedditSpider._parse_reddit_count(raw) == expected
+
+    def test_save_cutoff_cache_preserves_existing_keys(self, tmp_path):
+        spider = self._make_spider()
+        spider.query = "python"
+        spider.subreddit = None
+        spider._cutoff_cache_path = tmp_path / "reddit_cutoff.json"
+        spider._latest_published = "2026-05-04T00:00:00Z"
+        spider._cutoff_cache_path.write_text(
+            json.dumps({"other": "2026-01-01T00:00:00Z"}),
+            encoding="utf-8",
+        )
+
+        spider._save_cutoff_cache()
+
+        data = json.loads(spider._cutoff_cache_path.read_text(encoding="utf-8"))
+        assert data == {
+            "other": "2026-01-01T00:00:00Z",
+            "python": "2026-05-04T00:00:00Z",
+        }
+
+    def test_start_requests_uses_pullpush_for_date_filters(self):
+        spider = self._make_spider()
+        spider.date_from = "2026-01-01"
+        requests = list(spider.start_requests())
+        assert len(requests) == 2
+        assert requests[1].callback == spider.parse_pullpush
+
+    @pytest.mark.asyncio
+    async def test_load_cutoff_date_uses_published_at_from_supabase(self):
+        spider = self._make_spider()
+        spider.settings.get.side_effect = lambda key, default=None: {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_KEY": "secret",
+        }.get(key, default)
+
+        execute_result = MagicMock()
+        execute_result.data = [{"published_at": "2026-05-01T00:00:00Z"}]
+
+        query = MagicMock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.order.return_value = query
+        query.limit.return_value = query
+        query.execute = AsyncMock(return_value=execute_result)
+
+        client = MagicMock()
+        client.table.return_value = query
+        client.postgrest.aclose = AsyncMock(return_value=None)
+
+        async def fake_create_async_client(*args):
+            return client
+
+        with patch("scrapper.spiders.reddit.create_async_client", fake_create_async_client):
+            await spider._load_cutoff_date()
+
+        query.select.assert_called_with("published_at")
+        query.order.assert_called_with("published_at", desc=True)
+        assert spider.cutoff_date == "2026-05-01T00:00:00Z"
 
     def test_normalize_published_at_invalid(self):
         spider = self._make_spider()

@@ -66,17 +66,18 @@ def test_curl_cffi_preserves_method_body_headers_proxy_and_timeout(monkeypatch):
     handler = CurlCffiDownloadHandler.__new__(CurlCffiDownloadHandler)
     handler._crawler = MagicMock()
     handler._crawler.settings.getfloat.return_value = 30.0
+    handler._session = MagicMock()
+    handler._session.request.return_value = fake_response
 
-    with patch("curl_cffi.requests.request", return_value=fake_response) as request_mock:
-        with patch("twisted.internet.threads.deferToThread") as defer_mock:
-            handler._download_request(request, spider)
+    with patch("twisted.internet.threads.deferToThread") as defer_mock:
+        handler._download_request(request, spider)
 
-        positional_args = defer_mock.call_args[0]
-        assert len(positional_args) == 1
+    positional_args = defer_mock.call_args[0]
+    assert len(positional_args) == 1
 
-        result = positional_args[0]()
+    result = positional_args[0]()
 
-    _, kwargs = request_mock.call_args
+    _, kwargs = handler._session.request.call_args
     assert kwargs["method"] == "POST"
     assert kwargs["data"] == b'{"q":"python"}'
     assert kwargs["headers"]["User-Agent"] == "UA"

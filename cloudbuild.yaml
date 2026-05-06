@@ -6,6 +6,8 @@ steps:
       - 'Dockerfile.cloudrun'
       - '-t'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}'
       - '.'
     env:
       - 'DOCKER_BUILDKIT=1'
@@ -13,10 +15,15 @@ steps:
     args:
       - 'push'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}'
 
 substitutions:
   _REGION: us-central1
   _REPO: scrapper
   _IMAGE: scraper
+  _TAG: "latest"
 options:
-  machineType: 'E2_HIGHCPU_8'
+  machineType: 'E2_HIGHCPU_4'

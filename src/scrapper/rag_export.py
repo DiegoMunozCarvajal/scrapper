@@ -25,7 +25,7 @@ class MarkdownExportPipeline:
         self.output_dir = Path(output_dir)
         self._collision_counters: dict[str, int] = {}
 
-    def open_spider(self):
+    def open_spider(self, spider):
         posts_dir = self.output_dir / "posts"
         products_dir = self.output_dir / "products"
         pages_dir = self.output_dir / "pages"
@@ -35,10 +35,10 @@ class MarkdownExportPipeline:
         self._collision_counters = {}
         logger.info(f"Markdown export dirs ready: {self.output_dir}")
 
-    def close_spider(self):
+    def close_spider(self, spider):
         self._collision_counters = {}
 
-    def process_item(self, item):
+    def process_item(self, item, spider):
         is_post = isinstance(item, PostItem)
         is_generic = isinstance(item, GenericItem)
         site = item.get("site", "unknown")
@@ -100,16 +100,16 @@ class ChunkedJSONPipeline:
         self.output_dir = Path(output_dir)
         self._file = None
 
-    def open_spider(self):
+    def open_spider(self, spider):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"JSONL export ready: {self.output_dir}")
 
-    def close_spider(self):
+    def close_spider(self, spider):
         if self._file:
             self._file.close()
             self._file = None
 
-    def process_item(self, item):
+    def process_item(self, item, spider):
         chunk = self._build_chunk(item)
         try:
             if self._file is None:

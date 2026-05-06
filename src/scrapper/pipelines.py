@@ -21,9 +21,9 @@ class DataQualityPipeline:
         pipe._crawler = crawler
         return pipe
 
-    def process_item(self, item):
+    def process_item(self, item, spider):
         issues = self._validate(item)
-        spider_name = self._crawler.spider.name
+        spider_name = spider.name
         self._stats[spider_name]["total"] += 1
         if issues:
             self._stats[spider_name]["issues"] += 1
@@ -31,8 +31,8 @@ class DataQualityPipeline:
             item["quality_issues"] = existing + issues
         return item
 
-    def close_spider(self):
-        spider_name = self._crawler.spider.name
+    def close_spider(self, spider):
+        spider_name = spider.name
         stats = self._stats.get(spider_name, {"total": 0, "issues": 0})
         if stats["total"] > 0:
             pct = stats["issues"] / stats["total"] * 100
@@ -127,14 +127,13 @@ class ValidatePipeline:
         pipe._crawler = crawler
         return pipe
 
-    def process_item(self, item):
-        spider_name = self._crawler.spider.name
+    def process_item(self, item, spider):
         url = item.get("url")
         if not url:
-            raise DropItem(f"Missing URL in item from {spider_name}")
+            raise DropItem(f"Missing URL in item from {spider.name}")
         title = item.get("title")
         if not title:
-            raise DropItem(f"Missing title in item from {spider_name}: {url}")
+            raise DropItem(f"Missing title in item from {spider.name}: {url}")
         return item
 
 
@@ -144,7 +143,7 @@ class DedupInMemoryPipeline:
     def __init__(self):
         self.seen: set[str] = set()
 
-    def process_item(self, item):
+    def process_item(self, item, spider):
         url = item.get("url", "")
         if url in self.seen:
             raise DropItem(f"Duplicate URL in run: {url}")
@@ -187,7 +186,7 @@ class SupabasePipeline:
         allowed = self.TABLE_FIELDS[table]
         return {key: value for key, value in dict(item).items() if key in allowed}
 
-    def process_item(self, item):
+    def process_item(self, item, spider):
         if isinstance(item, GenericItem):
             table = "scraped_pages"
         elif isinstance(item, PostItem):
@@ -210,7 +209,7 @@ class SupabasePipeline:
                     raise DropItem(f"Supabase upsert failed after 3 attempts: {item.get('url')}")
         return item
 
-    def close_spider(self):
+    def close_spider(self, spider):
         try:
             self.client.postgrest.session.close()
         except Exception:

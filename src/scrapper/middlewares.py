@@ -55,7 +55,7 @@ class ProxyRotationMiddleware:
     def from_crawler(cls, crawler):
         return cls(proxy_list=crawler.settings.get("PROXY_LIST", ""))
 
-    def process_request(self, request):
+    def process_request(self, request, spider):
         if not self.proxies:
             return None
         proxy = random.choice(self.proxies)
@@ -75,7 +75,7 @@ class ProxyRotationMiddleware:
 class UARotationMiddleware:
     """Rotate user agent on each request."""
 
-    def process_request(self, request):
+    def process_request(self, request, spider):
         ua = random.choice(USER_AGENTS)
         request.headers["User-Agent"] = ua
 

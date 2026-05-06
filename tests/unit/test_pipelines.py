@@ -4,10 +4,16 @@ from scrapper.items import GenericItem, PostItem, ProductItem
 from scrapper.pipelines import ValidatePipeline, DedupInMemoryPipeline, DataQualityPipeline, SupabasePipeline
 
 
+class FakeSpider:
+    name = "test_spider"
+
+
 class FakeCrawler:
-    class Spider:
-        name = "test_spider"
-    spider = Spider()
+    spider = FakeSpider()
+
+
+def _spider():
+    return FakeSpider()
 
 
 def test_validate_drops_missing_url():
@@ -15,7 +21,7 @@ def test_validate_drops_missing_url():
     pipe._crawler = FakeCrawler()
     item = PostItem(title="Has title but no URL")
     with pytest.raises(DropItem, match="Missing URL"):
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
 
 
 def test_validate_drops_missing_title():
@@ -23,14 +29,14 @@ def test_validate_drops_missing_title():
     pipe._crawler = FakeCrawler()
     item = PostItem(url="http://example.com", title="")
     with pytest.raises(DropItem, match="Missing title"):
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
 
 
 def test_validate_passes_valid_item():
     pipe = ValidatePipeline()
     pipe._crawler = FakeCrawler()
     item = PostItem(site="reddit", url="http://x.com", title="Valid")
-    result = pipe.process_item(item)
+    result = pipe.process_item(item, spider=_spider())
     assert result is item
 
 
@@ -38,17 +44,17 @@ def test_dedup_drops_duplicate():
     pipe = DedupInMemoryPipeline()
     item1 = PostItem(site="reddit", url="http://x.com/1", title="A")
     item2 = PostItem(site="reddit", url="http://x.com/1", title="B")
-    pipe.process_item(item1)
+    pipe.process_item(item1, spider=_spider())
     with pytest.raises(DropItem, match="Duplicate URL"):
-        pipe.process_item(item2)
+        pipe.process_item(item2, spider=_spider())
 
 
 def test_dedup_allows_unique():
     pipe = DedupInMemoryPipeline()
     item1 = PostItem(site="reddit", url="http://x.com/1", title="A")
     item2 = PostItem(site="reddit", url="http://x.com/2", title="B")
-    assert pipe.process_item(item1) is item1
-    assert pipe.process_item(item2) is item2
+    assert pipe.process_item(item1, spider=_spider()) is item1
+    assert pipe.process_item(item2, spider=_spider()) is item2
 
 
 class TestDataQualityPipeline:
@@ -62,7 +68,7 @@ class TestDataQualityPipeline:
             content="This is some valid content.",
             score=42,
         )
-        result = pipe.process_item(item)
+        result = pipe.process_item(item, spider=_spider())
         assert result is item
         assert item.get("quality_issues") == []
 
@@ -74,7 +80,7 @@ class TestDataQualityPipeline:
             url="ftp://example.com/post",
             title="A Valid Post Title",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "quality_issues" in item
         assert "invalid_url_scheme" in item["quality_issues"]
 
@@ -86,7 +92,7 @@ class TestDataQualityPipeline:
             url="https://example.com/post",
             title="ab",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "title_too_short" in item["quality_issues"]
 
     def test_content_too_short_flagged(self):
@@ -98,7 +104,7 @@ class TestDataQualityPipeline:
             title="Valid Title",
             content="short",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "content_too_short" in item["quality_issues"]
 
     def test_content_none_not_flagged(self):
@@ -110,7 +116,7 @@ class TestDataQualityPipeline:
             title="Valid Title",
             content=None,
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert item.get("quality_issues") == []
 
     def test_price_invalid_flagged(self):
@@ -122,7 +128,7 @@ class TestDataQualityPipeline:
             title="Product",
             price=-5,
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "price_invalid" in item["quality_issues"]
 
     def test_price_not_numeric_flagged(self):
@@ -134,7 +140,7 @@ class TestDataQualityPipeline:
             title="Product",
             price="gratis",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "price_not_numeric" in item["quality_issues"]
 
     def test_rating_out_of_range_flagged(self):
@@ -146,7 +152,7 @@ class TestDataQualityPipeline:
             title="Product",
             rating=6.0,
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "rating_out_of_range" in item["quality_issues"]
 
     def test_score_not_integer_flagged(self):
@@ -158,7 +164,7 @@ class TestDataQualityPipeline:
             title="Valid Title",
             score="not-a-number",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "score_not_integer" in item["quality_issues"]
 
     def test_price_none_not_flagged(self):
@@ -170,7 +176,7 @@ class TestDataQualityPipeline:
             title="Product",
             price=None,
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert item.get("quality_issues") == []
 
     def test_close_spider_reports_stats(self):
@@ -181,8 +187,8 @@ class TestDataQualityPipeline:
             url="https://example.com/post",
             title="ab",  # triggers title_too_short
         )
-        pipe.process_item(item)
-        pipe.close_spider()
+        pipe.process_item(item, spider=_spider())
+        pipe.close_spider(spider=pipe._crawler.spider)
         stats = pipe._stats["test_spider"]
         assert stats["total"] == 1
         assert stats["issues"] == 1
@@ -198,7 +204,7 @@ class TestDataQualityPipeline:
             price=-10,
             rating=6.0,
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "price_invalid" in item["quality_issues"]
         assert "rating_out_of_range" in item["quality_issues"]
 
@@ -212,7 +218,7 @@ class TestDataQualityPipeline:
             page_type="forum",
             score="not-a-number",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert "score_not_integer" in item["quality_issues"]
 
     def test_generic_article_no_price_validation(self):
@@ -225,7 +231,7 @@ class TestDataQualityPipeline:
             page_type="article",
             content="This is a proper article with enough content.",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert item.get("quality_issues") == []
 
     def test_generic_unknown_type_basic_validation_only(self):
@@ -237,23 +243,23 @@ class TestDataQualityPipeline:
             title="Test Page",
             page_type="other",
         )
-        pipe.process_item(item)
+        pipe.process_item(item, spider=_spider())
         assert item.get("quality_issues") == []
 
     def test_generic_validate_passes_valid(self):
         pipe = ValidatePipeline()
         pipe._crawler = FakeCrawler()
         item = GenericItem(site="example.com", url="http://x.com", title="Valid")
-        result = pipe.process_item(item)
+        result = pipe.process_item(item, spider=_spider())
         assert result is item
 
     def test_generic_dedup_works(self):
         pipe = DedupInMemoryPipeline()
         item1 = GenericItem(site="example.com", url="http://x.com/1", title="A")
         item2 = GenericItem(site="example.com", url="http://x.com/1", title="B")
-        pipe.process_item(item1)
+        pipe.process_item(item1, spider=_spider())
         with pytest.raises(DropItem, match="Duplicate URL"):
-            pipe.process_item(item2)
+            pipe.process_item(item2, spider=_spider())
 
 
 class FakeSettings(dict):

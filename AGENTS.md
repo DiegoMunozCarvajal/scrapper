@@ -40,26 +40,6 @@ scrapy crawl generic -a url="https://books.toscrape.com" -a type="listing" -a li
 scrapy crawl corte -a query="libertad de expresion" -a limit=30 -s ROBOTSTXT_OBEY=False -o results.json
 scrapy crawl rama -a query="sucesion" -a limit=10 -a download=1 -a download_dir=./providencias -s ROBOTSTXT_OBEY=False -o results.json
 
-# Docker — build and start all services
-docker-compose up -d --build
-
-# Docker — view logs
-docker-compose logs -f
-
-# Docker — trigger a spider via Scrapyd API
-curl -s -X POST 'http://localhost:6800/schedule.json' \
-  --data-urlencode 'project=scrapper' \
-  --data-urlencode 'spider=reddit' \
-  --data-urlencode 'query=python' \
-  --data-urlencode 'limit=5' \
-  --data-urlencode 'setting=ROBOTSTXT_OBEY=False'
-
-# Docker — check job status
-curl -s 'http://localhost:6800/listjobs.json?project=scrapper'
-
-# Docker — Scrapyd health
-curl -s http://localhost:6800/daemonstatus.json
-
 # Run with visible browser (debugging)
 HEADLESS=false scrapy crawl hotmart -a query="python" -a limit=5
 
@@ -82,10 +62,91 @@ scrapy list
 
 # Coverage report
 pytest tests/ --cov=src/scrapper --cov-report=term-missing
-
-# Health check (for Scrapyd)
-./bin/health-check.sh
 ```
+
+## Scheduling & Deployment
+
+### Local (runner_local.py)
+
+Ejecuta spiders desde `queries.json` sin necesidad de Docker ni cron:
+
+```bash
+# Ver qué ejecutaría (sin correr)
+python runner_local.py --dry-run
+
+# Ejecutar un spider específico
+python runner_local.py --spider reddit
+
+# Ejecutar todos los spiders
+python runner_local.py
+
+# Acumular resultados en un solo archivo JSONL
+python runner_local.py --append
+```
+
+**Salida:**
+- Por defecto: `output/YYYYMMDD_HHMMSS/spider_query.json` (archivos separados por ejecución)
+- Con `--append`: `output/spider_history.jsonl` (acumulativo)
+
+### Docker (local con Scrapyd)
+
+```bash
+# Build and start all services
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f
+
+# Trigger a spider via Scrapyd API
+curl -s -X POST 'http://localhost:6800/schedule.json' \
+  --data-urlencode 'project=scrapper' \
+  --data-urlencode 'spider=reddit' \
+  --data-urlencode 'query=python' \
+  --data-urlencode 'limit=5' \
+  --data-urlencode 'setting=ROBOTSTXT_OBEY=False'
+
+# Check job status
+curl -s 'http://localhost:6800/listjobs.json?project=scrapper'
+
+# Scrapyd health
+curl -s http://localhost:6800/daemonstatus.json
+```
+
+### Google Cloud Run (producción)
+
+Arquitectura: **Cloud Run Jobs** (one-off containers) + **Cloud Scheduler** (cron triggers). Resultados van a Supabase.
+
+```bash
+# 0. Configurar variables de entorno
+export PROJECT_ID=tu-proyecto-gcp
+export REGION=us-central1
+export SUPABASE_URL=https://tu-proyecto.supabase.co
+export SUPABASE_KEY=tu-service-role-key
+export OPENAI_API_KEY=sk-...
+
+# 1. Deploy completo (build + push + jobs + schedulers)
+./deploy_cloud_run.sh
+
+# 2. Ejecutar un job manualmente (debug)
+gcloud run jobs execute scrapper-reddit --region us-central1
+
+# 3. Ver logs de una ejecución
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=scrapper-reddit" --limit 50
+```
+
+**Configuración por spider** en `queries.json`:
+
+```json
+{
+  "reddit": {
+    "schedule": "*/30 * * * *",
+    "cloud_run": { "cpu": 1, "memory": "1Gi", "timeout": "15m" },
+    "queries": [...]
+  }
+}
+```
+
+**Costo estimado:** Dentro del free tier de Cloud Run (~$0.35/mes si se excede ligeramente). $300 de créditos gratis para nuevas cuentas.
 
 ## Architecture
 
@@ -112,13 +173,17 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 - `src/scrapper/settings.py` — Scrapy settings, Playwright config, env-driven headless/human simulation toggles, LLM + curl-cffi config, loguru file rotation setup
 - `src/scrapper/utils.py` — `USER_AGENTS`, `random_user_agent()`, `ensure_dir()`, `slugify()`, `FakeFailure`
 - `setup.py` — Minimal shim for `scrapyd-deploy` compatibility (Scrapyd needs `entry_points` for spider discovery; `setup()` reads package config from `pyproject.toml`)
-- `Dockerfile` — Multi-stage-like build with `busybox-static` (non-root crond), Playwright Chromium, BuildKit cache mount, non-root `appuser` (UID 10001), healthcheck via Scrapyd API
-- `docker-compose.yml` — Single-service stack: `cap_drop: ALL`, `no-new-privileges`, `shm_size: 2gb` (Chromium), volume mounts for persistence
-- `docker-entrypoint.sh` — Graceful shutdown (SIGTERM → SIGKILL after 10s), writability checks, SQLite file bootstrap, crontab generation, Scrapyd + dashboard startup, log streaming
+- `Dockerfile` — Multi-stage-like build with `busybox-static` (non-root crond), Playwright Chromium, BuildKit cache mount, non-root `appuser` (UID 10001), healthcheck via Scrapyd API. **Para uso local con Docker Compose.**
+- `Dockerfile.cloudrun` — Imagen optimizada para Cloud Run Jobs (one-off, sin Scrapyd/crond). Usa `playwright install chromium` + entrypoint `cloud_run_runner.py`.
+- `docker-compose.yml` — Single-service stack: `cap_drop: ALL`, `no-new-privileges`, `shm_size: 2gb` (Chromium), volume mounts for persistence. **Para uso local.**
+- `docker-entrypoint.sh` — Graceful shutdown (SIGTERM → SIGKILL after 10s), writability checks, SQLite file bootstrap, crontab generation, Scrapyd + dashboard startup, log streaming. **Para Docker local.**
 - `bin/health-check.sh` — Scrapyd health monitoring script
 - `scripts/setup_supabase.sql` — DB schema with RLS policies (5 tables: sites, scrape_jobs, posts, products, scraped_pages). **Run in Supabase SQL Editor to initialize.** Idempotent (`IF NOT EXISTS`).
-- `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling (uses busybox crond in Docker, not scrapyd.conf schedule)
-- `queries.json` — Cron scheduling configuration (read by `generate_schedule.py`)
+- `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling (uses busybox crond in Docker, not scrapyd.conf schedule). **Para Docker local.**
+- `queries.json` — Configuración de spiders, queries, schedules y recursos de Cloud Run (leído por `cloud_run_runner.py`, `runner_local.py`, `generate_schedule.py` y `deploy_cloud_run.sh`)
+- `runner_local.py` — Ejecuta spiders localmente desde `queries.json` con salida timestamped o acumulativa. **Para desarrollo/pruebas.**
+- `cloud_run_runner.py` — Entrypoint para Cloud Run Jobs. Lee `queries.json`, ejecuta un spider y sale. **Para producción en GCP.**
+- `deploy_cloud_run.sh` — Script de deployment: build + push a Artifact Registry, crea/actualiza Cloud Run Jobs + Cloud Schedulers. Lee config de `queries.json`.
 
 ## Spider Status
 
@@ -150,7 +215,6 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | `CURL_CFFI_ENABLED` | `true` | Use curl-cffi with TLS impersonation |
 | `CURL_CFFI_IMPERSONATE` | `chrome124` | Browser fingerprint to impersonate |
 | `COOKIE_PERSIST_ENABLED` | `true` | Persist cookies between runs |
-| `SCHEDULE_ENABLED` | `false` | Enable Scrapyd cron scheduling |
 | `RAG_EXPORT_ENABLED` | `true` | Export scraped items as Markdown + JSONL |
 | `LOG_LEVEL` | `INFO` | Log verbosity level |
 | `ALERT_WEBHOOK_URL` | — | Discord/Slack webhook for error alerts |
@@ -160,7 +224,8 @@ pytest tests/ --cov=src/scrapper --cov-report=term-missing
 | `ALERT_EMAIL_PASSWORD` | — | SMTP password (Gmail App Password) |
 | `ALERT_EMAIL_TO` | — | Recipient email address |
 | `ALERT_ERROR_THRESHOLD` | `5` | Error count to trigger email alert |
-| `SCRAPYD_API_URL` | `http://localhost:6800/schedule.json` | Scrapyd API endpoint |
+
+> **Nota:** Las variables `SCHEDULE_ENABLED` y `SCRAPYD_API_URL` solo aplican al setup Docker local con Scrapyd.
 
 ## Testing
 

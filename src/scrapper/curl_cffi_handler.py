@@ -3,11 +3,27 @@ import os
 from loguru import logger
 from scrapy.http import Headers
 from scrapy.responsetypes import responsetypes
+
 from .stealth_handler import ScrapyPlaywrightStealthDownloadHandler
 
 
 class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
     IMPERSONATE_FALLBACK = "chrome124"
+
+    def __init__(self, settings):
+        super().__init__(settings)
+        self._session = None
+
+    def _get_session(self):
+        if not hasattr(self, "_session"):
+            self._session = None
+        if self._session is None:
+            try:
+                from curl_cffi import requests as curl_requests
+            except ImportError:
+                return None
+            self._session = curl_requests.Session()
+        return self._session
 
     def _download_request(self, request, spider=None):
         if spider is None:
@@ -20,9 +36,8 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
         if not enabled:
             return super()._download_request(request, spider)
 
-        try:
-            from curl_cffi import requests as curl_requests
-        except ImportError:
+        session = self._get_session()
+        if session is None:
             logger.warning("curl_cffi not available, falling back to default handler")
             return super()._download_request(request, spider)
 
@@ -44,11 +59,18 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
                     "timeout": timeout,
                 }
                 if request.body:
-                    kwargs["data"] = request.body
+                    body = request.body
+                    if isinstance(body, memoryview):
+                        body = bytes(body)
+                    kwargs["data"] = body
+                    if "Content-Type" not in headers:
+                        body_hint = body[:200].decode("utf-8", errors="replace").strip()
+                        if body_hint.startswith("{") or body_hint.startswith("["):
+                            kwargs["headers"]["Content-Type"] = "application/json"
                 if request.meta.get("proxy"):
                     kwargs["proxy"] = request.meta["proxy"]
 
-                resp = curl_requests.request(**kwargs)
+                resp = session.request(**kwargs)
                 response_headers = Headers(resp.headers)
                 respcls = responsetypes.from_args(
                     headers=response_headers,

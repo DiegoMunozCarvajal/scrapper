@@ -75,22 +75,15 @@ class LLMExtractor:
         return validated
 
     def _chunk_html(self, html, max_chars=100000):
-        if len(html) <= max_chars:
-            return [html]
+        import re
+        clean = re.sub(r'<(script|style|noscript)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL)
+        clean = re.sub(r'<[^>]+>', ' ', clean)
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        if len(clean) <= max_chars:
+            return [clean]
         chunks = []
-        pos = 0
-        while pos < len(html):
-            end = pos + max_chars
-            if end >= len(html):
-                chunks.append(html[pos:])
-                break
-            last_gt = html.rfind(">", pos, end)
-            if last_gt > pos:
-                chunks.append(html[pos:last_gt + 1])
-                pos = last_gt + 1
-            else:
-                chunks.append(html[pos:end])
-                pos = end
+        for i in range(0, len(clean), max_chars):
+            chunks.append(clean[i:i + max_chars])
         return chunks
 
     def _cache_key(self, site, query, html):

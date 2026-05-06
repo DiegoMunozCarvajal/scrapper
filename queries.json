@@ -3,7 +3,7 @@
     "schedule": "*/30 * * * *",
     "cloud_run": {
       "cpu": 1,
-      "memory": "2Gi",
+      "memory": "512Mi",
       "timeout": "20m"
     },
     "queries": [
@@ -29,10 +29,10 @@
     "schedule": "0 */6 * * *",
     "cloud_run": {
       "cpu": 1,
-      "memory": "2Gi",
+      "memory": "1Gi",
       "timeout": "20m"
     },
-    "tasks": [
+    "queries": [
       { "url": "https://books.toscrape.com", "type": "listing" }
     ]
   }
