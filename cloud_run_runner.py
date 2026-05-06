@@ -300,6 +300,12 @@ def main():
                     if "query" in item:
                         run_args["query"] = item["query"]
                         label += f' q="{item["query"]}"'
+                    if "date_from" in item:
+                        run_args["date_from"] = item["date_from"]
+                        label += f' from={item["date_from"]}'
+                    if "date_to" in item:
+                        run_args["date_to"] = item["date_to"]
+                        label += f' to={item["date_to"]}'
                 elif "query" in item:
                     query = item["query"]
                     limit = item.get("limit", 10)
