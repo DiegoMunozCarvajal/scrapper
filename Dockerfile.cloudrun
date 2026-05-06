@@ -60,12 +60,12 @@ RUN groupadd --system --gid 1000 appgroup && \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Crear directorios de trabajo necesarios (como root)
+RUN mkdir -p logs metrics cookies rag_output && touch llm_cache.db
+
 # Instalar navegador Chromium como usuario no-root
 USER appuser
 RUN playwright install chromium
-
-# Crear directorios de trabajo necesarios
-RUN mkdir -p logs metrics cookies rag_output && touch llm_cache.db
 
 # Copiar código fuente con permisos correctos
 USER root
