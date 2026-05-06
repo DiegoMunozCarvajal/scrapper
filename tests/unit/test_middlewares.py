@@ -138,3 +138,44 @@ def test_process_response_passes_through_200():
     result = mw.process_response(request=request, response=response, spider=mw.crawler.spider)
 
     assert result is response
+
+
+class TestProxyRotationMiddlewareDecodoAndHealth:
+    def test_decodo_fallback_builds_proxy_url(self):
+        mw = ProxyRotationMiddleware(
+            proxy_list="",
+            decodo_user="alice",
+            decodo_password="secret",
+            decodo_endpoint="gate.decodo.com",
+            decodo_port="7000",
+        )
+        assert len(mw.proxies) == 1
+        assert mw.proxies[0] == "http://alice:secret@gate.decodo.com:7000"
+
+    def test_safe_proxy_log_strips_credentials(self):
+        url = "http://alice:secret@gate.decodo.com:7000"
+        assert ProxyRotationMiddleware._safe_proxy_log(url) == "http://gate.decodo.com:7000"
+
+    def test_process_exception_tracks_proxy_failures(self):
+        mw = ProxyRotationMiddleware(proxy_list="http://p1:8080")
+        request = FakeRequest()
+        mw.process_request(request, spider=FakeSpider())
+        proxy = request.meta["_proxy_rotation"]
+        assert proxy == "http://p1:8080"
+
+        exc = Exception("Connection refused")
+        mw.process_exception(request, exc, FakeSpider())
+        assert mw.failed_proxies[proxy] == 1
+
+    def test_pick_proxy_skips_unhealthy_proxies(self):
+        mw = ProxyRotationMiddleware(proxy_list="http://p1:8080,http://p2:8080")
+        mw.failed_proxies["http://p1:8080"] = 5
+        picked = mw._pick_proxy()
+        assert picked == "http://p2:8080"
+
+    def test_pick_proxy_resets_after_all_failed(self):
+        mw = ProxyRotationMiddleware(proxy_list="http://p1:8080")
+        mw.failed_proxies["http://p1:8080"] = 5
+        picked = mw._pick_proxy()
+        assert picked == "http://p1:8080"
+        assert mw.failed_proxies == {}

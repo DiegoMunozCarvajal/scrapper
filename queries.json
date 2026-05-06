@@ -7,14 +7,14 @@
       "timeout": "45m"
     },
     "queries": [
-      { "subreddit": "seduction", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "PickUpArtist", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "dating_advice", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "dating", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "Flirting", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "socialskills", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "OnlineDating", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "AskMenAdvice", "limit": 50, "date_from": "2026-05-05" }
+      { "subreddit": "seduction", "limit": 50 },
+      { "subreddit": "PickUpArtist", "limit": 50 },
+      { "subreddit": "dating_advice", "limit": 50 },
+      { "subreddit": "dating", "limit": 50 },
+      { "subreddit": "Flirting", "limit": 50 },
+      { "subreddit": "socialskills", "limit": 50 },
+      { "subreddit": "OnlineDating", "limit": 50 },
+      { "subreddit": "AskMenAdvice", "limit": 50 }
     ]
   },
   "reddit-evening": {
@@ -26,14 +26,14 @@
       "timeout": "45m"
     },
     "queries": [
-      { "subreddit": "AskWomen", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "AskWomenNoCensor", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "askwomenadvice", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "datingoverthirty", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "Bumble", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "Tinder", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "hingeapp", "limit": 50, "date_from": "2026-05-05" },
-      { "subreddit": "OkCupid", "limit": 50, "date_from": "2026-05-05" }
+      { "subreddit": "AskWomen", "limit": 50 },
+      { "subreddit": "AskWomenNoCensor", "limit": 50 },
+      { "subreddit": "askwomenadvice", "limit": 50 },
+      { "subreddit": "datingoverthirty", "limit": 50 },
+      { "subreddit": "Bumble", "limit": 50 },
+      { "subreddit": "Tinder", "limit": 50 },
+      { "subreddit": "hingeapp", "limit": 50 },
+      { "subreddit": "OkCupid", "limit": 50 }
     ]
   }
 }

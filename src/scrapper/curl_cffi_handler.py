@@ -1,4 +1,5 @@
 import os
+import threading
 
 from loguru import logger
 from scrapy.http import Headers
@@ -13,16 +14,18 @@ class CurlCffiDownloadHandler(ScrapyPlaywrightStealthDownloadHandler):
     def __init__(self, settings):
         super().__init__(settings)
         self._session = None
+        self._session_lock = threading.Lock()
 
     def _get_session(self):
-        if not hasattr(self, "_session"):
-            self._session = None
         if self._session is None:
-            try:
-                from curl_cffi import requests as curl_requests
-            except ImportError:
-                return None
-            self._session = curl_requests.Session()
+            with self._session_lock:
+                if self._session is None:
+                    try:
+                        from curl_cffi import requests as curl_requests
+                    except ImportError:
+                        logger.warning("curl_cffi not installed")
+                        return None
+                    self._session = curl_requests.Session()
         return self._session
 
     def _download_request(self, request, spider=None):

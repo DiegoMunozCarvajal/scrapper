@@ -11,6 +11,8 @@ from scrapy import Request
 from scrapy.http import HtmlResponse
 from scrapy_playwright.handler import ScrapyPlaywrightDownloadHandler
 
+_COOKIE_DIR = Path(__file__).parent.parent.parent / "cookies"
+
 # playwright-stealth v2.0.3 ships different APIs per platform wheel.
 # Try the new API (StealthConfig + stealth_async) first, fall back
 # to the old API (Stealth + apply_stealth_async).
@@ -74,19 +76,11 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
     ) -> BrowserContext:
         context_kwargs = context_kwargs or {}
 
-        if "proxy" not in context_kwargs:
-            env_proxy = self._crawler.settings.get("PROXY_LIST", "")
-            if env_proxy:
-                proxies = [p.strip() for p in env_proxy.split(",") if p.strip()]
-                if proxies:
-                    import random
-                    context_kwargs["proxy"] = {"server": random.choice(proxies)}
-
         cookie_persist = os.getenv("COOKIE_PERSIST_ENABLED", "true").lower() in (
             "true", "1", "yes",
         )
         if cookie_persist:
-            cookie_file = Path(f"cookies/{name}.json")
+            cookie_file = _COOKIE_DIR / f"{name}.json"
             if cookie_file.exists():
                 storage_state = _load_storage_state(cookie_file)
                 if storage_state:
@@ -98,7 +92,7 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
             import asyncio
             async def save_on_close(ctx):
                 try:
-                    await _save_storage_state(ctx, Path(f"cookies/{name}.json"))
+                    await _save_storage_state(ctx, _COOKIE_DIR / f"{name}.json")
                 except Exception as e:
                     logger.warning(f"Failed to save cookies for context '{name}': {e}")
 

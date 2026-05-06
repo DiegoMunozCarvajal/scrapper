@@ -160,7 +160,7 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 - `src/scrapper/models.py` — `Post`, `Product`, `ScrapeResult` dataclasses (used across spiders and pipelines)
 - `src/scrapper/pipelines.py` — Validate → DataQuality → Dedup → Supabase upsert (with 3 retries + DropItem on failure)
 - `src/scrapper/pagination.py` — `PaginationDetector` class for detecting next-page URLs and pagination type (links/load-more/scroll) from HTML
-- `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright), UA rotation (incl. Playwright)
+- `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright + Decodo residential proxy support with health tracking), UA rotation (incl. Playwright)
 - `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging). **Has fallback for both old and new playwright-stealth APIs** (Linux wheels ship a different API than macOS).
 - `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else
 - `src/scrapper/llm_extractor.py` — `LLMExtractor` class (OpenAI gpt-4o-mini, JSON mode, SQLite cache) + shared `llm_fallback()` function (properly closes cache)
@@ -204,7 +204,11 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 |----------|---------|-------------|
 | `SUPABASE_URL` | — | Supabase project URL |
 | `SUPABASE_KEY` | — | Supabase service role key (⚠️ bypasses RLS) |
-| `PROXY_LIST` | — | Comma-separated proxy URLs |
+| `PROXY_LIST` | — | Comma-separated proxy URLs (takes precedence over Decodo) |
+| `DECODO_USER` | — | Decodo residential proxy username |
+| `DECODO_PASSWORD` | — | Decodo residential proxy password |
+| `DECODO_ENDPOINT` | `gate.decodo.com` | Decodo proxy gateway endpoint |
+| `DECODO_PORT` | `7000` | Decodo proxy gateway port |
 | `HEADLESS` | `true` | Run Playwright in headless mode |
 | `PLAYWRIGHT_HUMAN_SIMULATION` | `true` | Enable random scroll/delay + canvas/WebGL spoofing |
 | `OPENAI_API_KEY` | — | OpenAI API key for LLM fallback extraction |
@@ -229,7 +233,7 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 
 ## Testing
 
-- 273 tests passing (items, models, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
+- 320 tests passing (items, models, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
 - 65% coverage (core modules at 77-100%, spiders need Playwright for full coverage)
 - Integration tests use fixture files (XML/JSON/HTML) for deterministic offline testing
 - `asyncio_mode = "auto"` in pyproject.toml

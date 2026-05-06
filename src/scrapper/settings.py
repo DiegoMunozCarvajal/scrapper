@@ -80,8 +80,8 @@ if RAG_EXPORT_ENABLED:
     ITEM_PIPELINES["scrapper.rag_export.ChunkedJSONPipeline"] = 450
 
 DOWNLOADER_MIDDLEWARES = {
+    "scrapper.middlewares.ProxyRotationMiddleware": 100,
     "scrapper.middlewares.RetryWithBackoffMiddleware": 550,
-    "scrapper.middlewares.ProxyRotationMiddleware": 750,
     "scrapper.middlewares.UARotationMiddleware": 850,
 }
 
@@ -95,6 +95,12 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 PROXY_LIST = os.getenv("PROXY_LIST", "")
+
+# ── Decodo residential proxy manager ───────
+DECODO_USER = os.getenv("DECODO_USER", "")
+DECODO_PASSWORD = os.getenv("DECODO_PASSWORD", "")
+DECODO_ENDPOINT = os.getenv("DECODO_ENDPOINT", "gate.decodo.com")
+DECODO_PORT = os.getenv("DECODO_PORT", "7000")
 
 # ── curl-cffi anti-bot ──────────────────────
 CURL_CFFI_ENABLED = os.getenv("CURL_CFFI_ENABLED", "true").lower() in ("true", "1", "yes")
