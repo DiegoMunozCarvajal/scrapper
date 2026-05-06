@@ -1,57 +1,77 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-bookworm
+# Dockerfile optimizado para Google Cloud Run Jobs.
+# Multi-stage build para reducir tamaño de imagen final.
+# No incluye Scrapyd, crond, ni healthchecks — es un contenedor one-off.
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 1: Builder — instala dependencias y compila el paquete
+# ═══════════════════════════════════════════════════════════════════
+FROM python:3.12-slim-bookworm AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# ── System packages (curl for healthcheck, busybox-static for crond) ──
+# Build tools necesarios para compilar extensiones nativas
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl busybox-static \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Virtual environment ────────────────────────────────────────────
-ENV VIRTUAL_ENV=/opt/venv
-RUN python -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# ── Install Python dependencies + package (pip downloads cached via mount)
-COPY pyproject.toml .
+# Copiar archivos de dependencias y código fuente
+COPY pyproject.toml setup.py ./
 COPY src/ src/
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ".[docker]"
 
-# ── Install Playwright system dependencies (as root) ───────────────
-RUN playwright install-deps chromium
+# Crear virtualenv e instalar dependencias
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -e ".[dev]"
 
-# ── Non-root user ──────────────────────────────────────────────────
-ARG APP_UID=10001
-ARG APP_USER=appuser
-ENV APP_HOME=/home/$APP_USER
-RUN useradd --no-log-init --create-home --shell /bin/bash --uid $APP_UID $APP_USER && \
-    rm -rf /app/build /app/src/scrapper.egg-info
+# ═══════════════════════════════════════════════════════════════════
+# Stage 2: Runtime — imagen mínima con solo deps de ejecución
+# ═══════════════════════════════════════════════════════════════════
+FROM python:3.12-slim-bookworm
 
-# ── Install Chromium browser (cached — before frequently-changing COPY) ─
-ENV PLAYWRIGHT_BROWSERS_PATH=$APP_HOME/.cache/ms-playwright
-RUN playwright install chromium && \
-    chown -R $APP_USER:$APP_USER $APP_HOME/.cache/ms-playwright
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HEADLESS=true \
+    PLAYWRIGHT_HUMAN_SIMULATION=true \
+    RAG_EXPORT_ENABLED=false \
+    COOKIE_PERSIST_ENABLED=false \
+    PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
 
-# ── Copy everything with appuser ownership ─────────────────────────
-COPY --chown=$APP_USER:$APP_USER . .
-RUN chmod +x /app/docker-entrypoint.sh && \
-    chown $APP_USER:$APP_USER /app
+WORKDIR /app
 
-USER $APP_USER
+# Runtime system deps mínimas para Chromium + utilidades
+# Lista curada de librerías gráficas requeridas por Playwright Chromium.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+    fonts-liberation curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# ── Create runtime directories as appuser ──────────────────────────
-RUN mkdir -p eggs logs dbs items metrics rag_output cookies
+# Crear usuario no-root (seguridad + Chromium sandbox requiere no-root)
+RUN groupadd --system --gid 1000 appgroup && \
+    useradd --system --gid appgroup --create-home --uid 1000 appuser
 
-# ── Expose ports ───────────────────────────────────────────────────
-EXPOSE 6800 8080
+# Copiar virtualenv pre-construido desde builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD ["curl", "-sf", "http://localhost:6800/daemonstatus.json"]
+# Instalar navegador Chromium como usuario no-root
+USER appuser
+RUN playwright install chromium
 
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# Crear directorios de trabajo necesarios
+RUN mkdir -p logs metrics cookies rag_output && touch llm_cache.db
+
+# Copiar código fuente con permisos correctos
+USER root
+COPY --chown=appuser:appgroup src/ src/
+COPY --chown=appuser:appgroup queries.json cloud_run_runner.py ./
+USER appuser
+
+# Entrypoint: ejecuta el runner y sale
+ENTRYPOINT ["python", "cloud_run_runner.py"]

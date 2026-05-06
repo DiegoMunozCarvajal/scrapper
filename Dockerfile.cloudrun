@@ -62,7 +62,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Crear directorios de trabajo necesarios (como root, luego transferir a appuser)
 RUN mkdir -p logs metrics cookies rag_output && touch llm_cache.db && \
-    chown -R appuser:appgroup logs metrics cookies rag_output llm_cache.db
+    chown -R appuser:appgroup /app
 
 # Instalar navegador Chromium como usuario no-root
 USER appuser

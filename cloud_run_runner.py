@@ -29,6 +29,13 @@ from pathlib import Path
 
 QUERIES_FILE = Path(__file__).parent / "queries.json"
 
+# Garantizar que directorios de trabajo existan (Cloud Run no persiste entre runs)
+for _d in ("logs", "metrics", "cookies", "rag_output"):
+    Path(__file__).parent.joinpath(_d).mkdir(parents=True, exist_ok=True)
+LLM_CACHE = Path(__file__).parent / "llm_cache.db"
+if not LLM_CACHE.exists():
+    LLM_CACHE.touch()
+
 PER_QUERY_TIMEOUT = int(os.getenv("PER_QUERY_TIMEOUT", "300"))
 MAX_RETRIES_PER_QUERY = int(os.getenv("MAX_RETRIES_PER_QUERY", "3"))
 RETRY_BACKOFF_BASE = float(os.getenv("RETRY_BACKOFF_BASE", "5.0"))
