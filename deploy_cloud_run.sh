@@ -90,6 +90,16 @@ if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT_ID" &>
         --project="$PROJECT_ID"
 fi
 
+# ── Otorgar roles necesarios a la service account ──
+log_info "Configurando roles para la service account..."
+for ROLE in roles/run.invoker roles/logging.logWriter; do
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+        --member="serviceAccount:${SA_EMAIL}" \
+        --role="$ROLE" \
+        --condition=None \
+        &>/dev/null || true
+done
+
 # ── Habilitar APIs si es necesario ──
 log_info "Verificando APIs necesarias..."
 gcloud services enable run.googleapis.com \
@@ -190,6 +200,7 @@ for SPIDER in $SPIDERS; do
             --set-env-vars "SUPABASE_URL=${SUPABASE_URL}" \
             --set-secrets "SUPABASE_KEY=supabase-key:latest,OPENAI_API_KEY=openai-api-key:latest" \
             --max-retries 0 \
+            --service-account "$SA_EMAIL" \
             --labels "spider=${SPIDER},environment=production,managed-by=deploy-script"
     else
         log_info "Creando job ${JOB_NAME}..."
@@ -204,6 +215,7 @@ for SPIDER in $SPIDERS; do
             --set-env-vars "SUPABASE_URL=${SUPABASE_URL}" \
             --set-secrets "SUPABASE_KEY=supabase-key:latest,OPENAI_API_KEY=openai-api-key:latest" \
             --max-retries 0 \
+            --service-account "$SA_EMAIL" \
             --labels "spider=${SPIDER},environment=production,managed-by=deploy-script"
     fi
 

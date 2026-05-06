@@ -18,6 +18,7 @@
     ]
   },
   "reddit-evening": {
+    "spider": "reddit",
     "schedule": "0 22 * * *",
     "cloud_run": {
       "cpu": 1,

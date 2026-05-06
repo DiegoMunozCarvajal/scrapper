@@ -233,7 +233,10 @@ def main():
         _log(f"ERROR: Spider '{args_cli.spider}' no existe en queries.json")
         sys.exit(1)
 
-    targets = {args_cli.spider: queries[args_cli.spider]}
+    config = queries[args_cli.spider]
+    # El spider real de Scrapy puede diferir del nombre del job (ej. reddit-evening -> reddit)
+    scrapy_spider = config.get("spider", args_cli.spider)
+    targets = {scrapy_spider: config}
 
     # Adquirir lock para evitar ejecuciones concurrentes del mismo spider
     if not args_cli.dry_run and not args_cli.no_lock:
@@ -246,9 +249,9 @@ def main():
     failed_queries = []
 
     try:
-        for spider, config in targets.items():
-            items = config.get("queries") or config.get("tasks") or []
-            _log(f"Procesando spider '{spider}' ({len(items)} tareas)")
+        for spider, spider_config in targets.items():
+            items = spider_config.get("queries") or spider_config.get("tasks") or []
+            _log(f"Procesando job '{args_cli.spider}' con spider '{spider}' ({len(items)} tareas)")
 
             for item in items:
                 total += 1
