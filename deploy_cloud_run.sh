@@ -60,6 +60,27 @@ if [ ! -f "$QUERIES_FILE" ]; then
     exit 1
 fi
 
+# Validar estructura de queries.json
+log_info "Validando queries.json..."
+if ! jq empty "$QUERIES_FILE" 2>/dev/null; then
+    log_error "queries.json no es JSON válido"
+    exit 1
+fi
+
+for KEY in $(jq -r 'keys[]' "$QUERIES_FILE"); do
+    HAS_SCHEDULE=$(jq -r ".\"$KEY\".schedule" "$QUERIES_FILE")
+    HAS_CLOUD_RUN=$(jq -r ".\"$KEY\".cloud_run | type" "$QUERIES_FILE")
+    if [ "$HAS_SCHEDULE" == "null" ] || [ -z "$HAS_SCHEDULE" ]; then
+        log_error "Job '$KEY' no tiene campo 'schedule'"
+        exit 1
+    fi
+    if [ "$HAS_CLOUD_RUN" != "object" ]; then
+        log_error "Job '$KEY' no tiene campo 'cloud_run'"
+        exit 1
+    fi
+done
+log_info "queries.json válido."
+
 # ── Leer variables de entorno requeridas ──
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ] || [ -z "$OPENAI_API_KEY" ]; then
     log_warn "Variables de entorno faltantes. Intentando leer desde .env..."
@@ -90,14 +111,24 @@ if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT_ID" &>
         --project="$PROJECT_ID"
 fi
 
-# ── Otorgar roles necesarios a la service account ──
+# ── Otorgar roles necesarios a la service account (idempotente) ──
 log_info "Configurando roles para la service account..."
 for ROLE in roles/run.invoker roles/logging.logWriter; do
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-        --member="serviceAccount:${SA_EMAIL}" \
-        --role="$ROLE" \
-        --condition=None \
-        &>/dev/null || true
+    HAS_ROLE=$(gcloud projects get-iam-policy "$PROJECT_ID" \
+        --flatten="bindings[].members" \
+        --format="table(bindings.role)" \
+        --filter="bindings.members:serviceAccount:${SA_EMAIL} AND bindings.role:${ROLE}" \
+        2>/dev/null | grep -c "$ROLE" || true)
+    if [ "$HAS_ROLE" -eq 0 ]; then
+        gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:${SA_EMAIL}" \
+            --role="$ROLE" \
+            --condition=None \
+            &>/dev/null || true
+        log_info "  Rol ${ROLE} otorgado."
+    else
+        log_info "  Rol ${ROLE} ya existe, omitiendo."
+    fi
 done
 
 # ── Habilitar APIs si es necesario ──
@@ -232,8 +263,8 @@ for SPIDER in $SPIDERS; do
             --http-method POST \
             --oauth-service-account-email "$SA_EMAIL" \
             --max-retry-attempts=3 \
-            --min-backoff=5m \
-            --max-backoff=1h
+            --min-backoff=30m \
+            --max-backoff=2h
     else
         log_info "Creando scheduler ${SCHEDULER_NAME}..."
         gcloud scheduler jobs create http "$SCHEDULER_NAME" \
@@ -244,8 +275,8 @@ for SPIDER in $SPIDERS; do
             --http-method POST \
             --oauth-service-account-email "$SA_EMAIL" \
             --max-retry-attempts=3 \
-            --min-backoff=5m \
-            --max-backoff=1h
+            --min-backoff=30m \
+            --max-backoff=2h
     fi
 
 done

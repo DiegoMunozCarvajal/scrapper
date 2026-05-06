@@ -31,10 +31,11 @@ QUERIES_FILE = Path(__file__).parent / "queries.json"
 PER_QUERY_TIMEOUT = int(os.getenv("PER_QUERY_TIMEOUT", "600"))
 MAX_RETRIES_PER_QUERY = int(os.getenv("MAX_RETRIES_PER_QUERY", "3"))
 RETRY_BACKOFF_BASE = float(os.getenv("RETRY_BACKOFF_BASE", "5.0"))
-LOCK_TTL_SECONDS = int(os.getenv("LOCK_TTL_SECONDS", "1800"))
+LOCK_TTL_SECONDS = int(os.getenv("LOCK_TTL_SECONDS", "900"))
 
 _child = None
 _terminate = False
+_lock_acquired = False
 
 
 def _handle_signal(signum, frame):
@@ -89,6 +90,8 @@ def acquire_lock(spider: str) -> bool:
                 "status": "running",
             }).execute()
             _log(f"Lock adquirido para '{spider}' (expira en {LOCK_TTL_SECONDS}s)")
+            global _lock_acquired
+            _lock_acquired = True
             return True
         except Exception as e:
             err_msg = str(e).lower()
@@ -105,6 +108,9 @@ def acquire_lock(spider: str) -> bool:
 
 def release_lock(spider: str):
     """Libera el lock distribuido al terminar."""
+    global _lock_acquired
+    if not _lock_acquired:
+        return
     try:
         from supabase import create_client
 
@@ -116,6 +122,7 @@ def release_lock(spider: str):
         client = create_client(supabase_url, supabase_key)
         client.table("spider_locks").delete().eq("spider", spider).execute()
         _log(f"Lock liberado para '{spider}'")
+        _lock_acquired = False
 
     except Exception as e:
         _log(f"WARN: No se pudo liberar lock ({e})")
@@ -145,7 +152,7 @@ def run_spider(spider: str, args: dict, dry_run: bool = False) -> bool:
             _log(f"Reintento {attempt}/{MAX_RETRIES_PER_QUERY} tras {backoff:.0f}s...")
             time.sleep(backoff)
 
-        _log(f"Ejecutando (intento {attempt}): {' '.join(cmd)}")
+        _log(f"Ejecutando (intento {attempt}): spider={spider} args={args}")
         _child = subprocess.Popen(cmd)
         _terminate = False
         deadline = time.time() + PER_QUERY_TIMEOUT
@@ -185,6 +192,14 @@ def run_spider(spider: str, args: dict, dry_run: bool = False) -> bool:
                 _child = None
                 _terminate = False
                 return True
+
+            # Si fue terminado por señal (SIGTERM/SIGINT), no reintentar
+            if _child.returncode < 0:
+                sig_name = signal.Signals(abs(_child.returncode)).name
+                _log(f"Scrapy terminado por señal {sig_name} (código {_child.returncode}), no se reintentará.")
+                _child = None
+                _terminate = False
+                return False
 
             _log(f"Scrapy terminó con código {_child.returncode}")
 
@@ -227,7 +242,14 @@ def main():
         _log(f"ERROR: No encontré {QUERIES_FILE}")
         sys.exit(1)
 
-    queries = json.loads(QUERIES_FILE.read_text())
+    try:
+        queries = json.loads(QUERIES_FILE.read_text())
+    except json.JSONDecodeError as e:
+        _log(f"ERROR: queries.json tiene JSON inválido: {e}")
+        sys.exit(1)
+    except Exception as e:
+        _log(f"ERROR: No se pudo leer queries.json: {e}")
+        sys.exit(1)
 
     if args_cli.spider not in queries:
         _log(f"ERROR: Spider '{args_cli.spider}' no existe en queries.json")
@@ -284,7 +306,7 @@ def main():
                     _log(f"FALLÓ (tras {MAX_RETRIES_PER_QUERY} intentos): {label}")
                     failed_queries.append(label)
     finally:
-        if not args_cli.dry_run and not args_cli.no_lock:
+        if _lock_acquired:
             release_lock(args_cli.spider)
 
     if args_cli.dry_run:

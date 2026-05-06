@@ -19,8 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar solo archivos de dependencias primero (mejor layer caching)
+# Copiar archivos de dependencias y código fuente
 COPY requirements.txt pyproject.toml setup.py ./
+COPY src/ src/
 
 # Crear virtualenv e instalar dependencias
 RUN python -m venv /opt/venv
