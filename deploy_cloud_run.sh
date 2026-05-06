@@ -70,12 +70,17 @@ fi
 for KEY in $(jq -r 'keys[]' "$QUERIES_FILE"); do
     HAS_SCHEDULE=$(jq -r ".\"$KEY\".schedule" "$QUERIES_FILE")
     HAS_CLOUD_RUN=$(jq -r ".\"$KEY\".cloud_run | type" "$QUERIES_FILE")
+    QUERY_COUNT=$(jq -r ".\"$KEY\".queries | length" "$QUERIES_FILE")
     if [ "$HAS_SCHEDULE" == "null" ] || [ -z "$HAS_SCHEDULE" ]; then
         log_error "Job '$KEY' no tiene campo 'schedule'"
         exit 1
     fi
     if [ "$HAS_CLOUD_RUN" != "object" ]; then
         log_error "Job '$KEY' no tiene campo 'cloud_run'"
+        exit 1
+    fi
+    if [ "$QUERY_COUNT" -eq 0 ] 2>/dev/null; then
+        log_error "Job '$KEY' no tiene queries"
         exit 1
     fi
 done
@@ -191,7 +196,6 @@ gcloud builds submit "${SCRIPT_DIR}" \
     || {
         log_warn "cloudbuild.yaml no encontrado o falló, usando build directo..."
         gcloud builds submit "${SCRIPT_DIR}" \
-            --tag "$IMAGE_TAG" \
             --tag "$IMAGE_TAG_VERSIONED" \
             --project="$PROJECT_ID"
     }
@@ -221,7 +225,7 @@ for SPIDER in $SPIDERS; do
     if gcloud run jobs describe "$JOB_NAME" --region="$REGION" --project="$PROJECT_ID" &>/dev/null; then
         log_info "Actualizando job existente ${JOB_NAME}..."
         gcloud run jobs update "$JOB_NAME" \
-            --image "$IMAGE_TAG" \
+            --image "$IMAGE_TAG_VERSIONED" \
             --region "$REGION" \
             --project "$PROJECT_ID" \
             --cpu "${CPU}" \
@@ -236,7 +240,7 @@ for SPIDER in $SPIDERS; do
     else
         log_info "Creando job ${JOB_NAME}..."
         gcloud run jobs create "$JOB_NAME" \
-            --image "$IMAGE_TAG" \
+            --image "$IMAGE_TAG_VERSIONED" \
             --region "$REGION" \
             --project "$PROJECT_ID" \
             --cpu "${CPU}" \

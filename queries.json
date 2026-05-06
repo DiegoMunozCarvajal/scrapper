@@ -4,7 +4,7 @@
     "cloud_run": {
       "cpu": 1,
       "memory": "1Gi",
-      "timeout": "20m"
+      "timeout": "45m"
     },
     "queries": [
       { "subreddit": "seduction", "limit": 50 },
@@ -23,7 +23,7 @@
     "cloud_run": {
       "cpu": 1,
       "memory": "1Gi",
-      "timeout": "20m"
+      "timeout": "45m"
     },
     "queries": [
       { "subreddit": "AskWomen", "limit": 50 },

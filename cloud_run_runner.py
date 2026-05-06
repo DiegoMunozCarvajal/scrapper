@@ -19,6 +19,7 @@ Variables de entorno requeridas:
 import argparse
 import json
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -28,7 +29,7 @@ from pathlib import Path
 
 QUERIES_FILE = Path(__file__).parent / "queries.json"
 
-PER_QUERY_TIMEOUT = int(os.getenv("PER_QUERY_TIMEOUT", "600"))
+PER_QUERY_TIMEOUT = int(os.getenv("PER_QUERY_TIMEOUT", "300"))
 MAX_RETRIES_PER_QUERY = int(os.getenv("MAX_RETRIES_PER_QUERY", "3"))
 RETRY_BACKOFF_BASE = float(os.getenv("RETRY_BACKOFF_BASE", "5.0"))
 LOCK_TTL_SECONDS = int(os.getenv("LOCK_TTL_SECONDS", "900"))
@@ -148,7 +149,7 @@ def run_spider(spider: str, args: dict, dry_run: bool = False) -> bool:
 
     for attempt in range(1, MAX_RETRIES_PER_QUERY + 1):
         if attempt > 1:
-            backoff = RETRY_BACKOFF_BASE * (2 ** (attempt - 2))
+            backoff = RETRY_BACKOFF_BASE * (2 ** (attempt - 2)) + random.uniform(0, 5)
             _log(f"Reintento {attempt}/{MAX_RETRIES_PER_QUERY} tras {backoff:.0f}s...")
             time.sleep(backoff)
 
@@ -232,7 +233,9 @@ def main():
         _log("ERROR: Debes especificar un spider. Uso: python cloud_run_runner.py <spider>")
         sys.exit(1)
 
-    required = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY"]
+    required = ["SUPABASE_URL", "SUPABASE_KEY"]
+    if os.getenv("LLM_ENABLED", "true").lower() not in ("false", "0", "no", ""):
+        required.append("OPENAI_API_KEY")
     missing = [v for v in required if not os.getenv(v)]
     if missing:
         _log(f"ERROR: Faltan variables de entorno: {', '.join(missing)}")
@@ -276,6 +279,10 @@ def main():
             _log(f"Procesando job '{args_cli.spider}' con spider '{spider}' ({len(items)} tareas)")
 
             for item in items:
+                if _terminate:
+                    _log("SIGTERM/SIGINT recibido, abortando ejecución...")
+                    break
+
                 total += 1
 
                 if "subreddit" in item:
@@ -324,6 +331,10 @@ def main():
         sys.exit(1)
 
     if failed_queries:
+        fail_rate = len(failed_queries) / total
+        if fail_rate > 0.5:
+            _log(f"Más del 50% de queries fallaron ({len(failed_queries)}/{total}), marcando job como fallido.")
+            sys.exit(2)
         _log("Algunas queries fallaron, pero el job se considera parcialmente exitoso.")
         _log("Las queries exitosas ya fueron guardadas en Supabase.")
 

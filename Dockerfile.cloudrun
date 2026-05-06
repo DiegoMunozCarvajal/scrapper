@@ -20,14 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar archivos de dependencias y código fuente
-COPY requirements.txt pyproject.toml setup.py ./
+COPY pyproject.toml setup.py ./
 COPY src/ src/
 
 # Crear virtualenv e instalar dependencias
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-deps .
+RUN pip install --no-cache-dir -e ".[dev]"
 
 # ═══════════════════════════════════════════════════════════════════
 # Stage 2: Runtime — imagen mínima con solo deps de ejecución
@@ -64,6 +63,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Instalar navegador Chromium como usuario no-root
 USER appuser
 RUN playwright install chromium
+
+# Crear directorios de trabajo necesarios
+RUN mkdir -p logs metrics cookies rag_output && touch llm_cache.db
 
 # Copiar código fuente con permisos correctos
 USER root
