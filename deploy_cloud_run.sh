@@ -194,10 +194,13 @@ gcloud builds submit "${SCRIPT_DIR}" \
     --project="$PROJECT_ID" \
     --substitutions="_REGION=${REGION},_REPO=${REPO_NAME},_IMAGE=${IMAGE_NAME},_TAG=${VERSION_TAG}" \
     || {
-        log_warn "cloudbuild.yaml no encontrado o falló, usando build directo..."
+        log_warn "cloudbuild.yaml no encontrado o falló, usando build directo con Dockerfile.cloudrun..."
         gcloud builds submit "${SCRIPT_DIR}" \
             --tag "$IMAGE_TAG_VERSIONED" \
-            --project="$PROJECT_ID"
+            --project="$PROJECT_ID" \
+            --timeout="20m" \
+            -- \
+            -f Dockerfile.cloudrun
     }
 
 # ── Leer spiders de queries.json ──
