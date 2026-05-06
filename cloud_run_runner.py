@@ -253,7 +253,15 @@ def main():
             for item in items:
                 total += 1
 
-                if "query" in item:
+                if "subreddit" in item:
+                    subreddit = item["subreddit"]
+                    limit = item.get("limit", 50)
+                    run_args = {"subreddit": subreddit, "limit": str(limit)}
+                    label = f'{spider} r/{subreddit} limit={limit}'
+                    if "query" in item:
+                        run_args["query"] = item["query"]
+                        label += f' q="{item["query"]}"'
+                elif "query" in item:
                     query = item["query"]
                     limit = item.get("limit", 10)
                     run_args = {"query": query, "limit": str(limit)}
