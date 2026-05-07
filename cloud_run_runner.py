@@ -29,6 +29,36 @@ from pathlib import Path
 
 QUERIES_FILE = Path(__file__).parent / "queries.json"
 
+
+def _load_queries() -> dict:
+    """Load spider configuration from environment variable or file.
+
+    Tries QUERIES_CONFIG env var first (mounted from Secret Manager),
+    falls back to local queries.json file for development/Docker local.
+    """
+    raw = os.getenv("QUERIES_CONFIG", "").strip()
+    if raw:
+        try:
+            queries = json.loads(raw)
+            _log("Configuración cargada desde QUERIES_CONFIG (Secret Manager)")
+            return queries
+        except json.JSONDecodeError as e:
+            _log(f"ERROR: QUERIES_CONFIG contiene JSON inválido: {e}")
+            sys.exit(1)
+
+    if QUERIES_FILE.exists():
+        try:
+            queries = json.loads(QUERIES_FILE.read_text())
+            _log("Configuración cargada desde queries.json local (fallback)")
+            return queries
+        except json.JSONDecodeError as e:
+            _log(f"ERROR: queries.json contiene JSON inválido: {e}")
+            sys.exit(1)
+
+    _log("ERROR: No se encontró QUERIES_CONFIG ni queries.json")
+    sys.exit(1)
+
+
 # Garantizar que directorios de trabajo existan (Cloud Run no persiste entre runs)
 for _d in ("logs", "metrics", "cookies", "rag_output"):
     Path(__file__).parent.joinpath(_d).mkdir(parents=True, exist_ok=True)
@@ -63,10 +93,10 @@ def _log(msg: str):
 
 
 def acquire_lock(spider: str) -> bool:
-    """Adquiere un lock distribuido atómico en Supabase.
+    """Adquiere un lock distribuido atómico en Supabase via RPC.
 
-    Usa la tabla 'spider_locks' con clave primaria sobre 'spider' para evitar
-    race conditions. Limpia locks expirados antes de intentar insertar.
+    Usa una stored procedure (RPC) para garantizar atomicidad.
+    Si no existe la función, fallback a insert directo con manejo de conflictos.
     """
     try:
         from supabase import create_client
@@ -83,13 +113,37 @@ def acquire_lock(spider: str) -> bool:
         expires_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
         now_iso = now.isoformat()
 
-        # 1. Limpiar locks expirados
+        # Intentar usar RPC atómico (si existe la función en Supabase)
+        try:
+            result = client.rpc(
+                "acquire_spider_lock",
+                {
+                    "p_spider": spider,
+                    "p_locked_at": now_iso,
+                    "p_locked_until": expires_iso,
+                }
+            ).execute()
+            if result.data is True:
+                _log(f"Lock adquirido para '{spider}' (expira en {LOCK_TTL_SECONDS}s)")
+                global _lock_acquired
+                _lock_acquired = True
+                return True
+            else:
+                _log(f"Lock ya está en uso para '{spider}', omitiendo ejecución.")
+                return False
+        except Exception as rpc_err:
+            err_msg = str(rpc_err).lower()
+            if "function" in err_msg and "does not exist" in err_msg:
+                _log("WARN: RPC acquire_spider_lock no existe, usando fallback directo.")
+            else:
+                raise
+
+        # Fallback: limpiar locks expirados + insert con manejo de excepciones
         try:
             client.table("spider_locks").delete().lt("locked_until", now_iso).execute()
         except Exception:
-            pass  # Ignorar errores de limpieza
+            pass
 
-        # 2. Intentar insertar nuestro lock atómicamente
         try:
             client.table("spider_locks").insert({
                 "spider": spider,
@@ -98,12 +152,10 @@ def acquire_lock(spider: str) -> bool:
                 "status": "running",
             }).execute()
             _log(f"Lock adquirido para '{spider}' (expira en {LOCK_TTL_SECONDS}s)")
-            global _lock_acquired
             _lock_acquired = True
             return True
         except Exception as e:
             err_msg = str(e).lower()
-            # Unique violation (23505) u otro error de duplicado indica que ya hay lock
             if "unique" in err_msg or "duplicate" in err_msg or "23505" in err_msg:
                 _log(f"Lock ya está en uso para '{spider}', omitiendo ejecución.")
                 return False
@@ -248,18 +300,7 @@ def main():
         _log(f"ERROR: Faltan variables de entorno: {', '.join(missing)}")
         sys.exit(1)
 
-    if not QUERIES_FILE.exists():
-        _log(f"ERROR: No encontré {QUERIES_FILE}")
-        sys.exit(1)
-
-    try:
-        queries = json.loads(QUERIES_FILE.read_text())
-    except json.JSONDecodeError as e:
-        _log(f"ERROR: queries.json tiene JSON inválido: {e}")
-        sys.exit(1)
-    except Exception as e:
-        _log(f"ERROR: No se pudo leer queries.json: {e}")
-        sys.exit(1)
+    queries = _load_queries()
 
     if args_cli.spider not in queries:
         _log(f"ERROR: Spider '{args_cli.spider}' no existe en queries.json")

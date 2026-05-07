@@ -284,7 +284,6 @@ def test_supabase_pipeline_serializes_only_table_columns():
         site="reddit",
         url="https://old.reddit.com/r/test/comments/abc/title/",
         title="Title",
-        thumbnail="https://example.com/thumb.jpg",
         link_flair="Discussion",
         domain="self.test",
         nsfw=False,
@@ -296,7 +295,6 @@ def test_supabase_pipeline_serializes_only_table_columns():
 
     data = pipe._serialize_item(item, "posts")
 
-    assert data["thumbnail"] == "https://example.com/thumb.jpg"
     assert data["link_flair"] == "Discussion"
     assert data["is_self_post"] is True
     assert data["quality_issues"] == ["low_score"]

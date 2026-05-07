@@ -157,7 +157,7 @@ class SupabasePipeline:
     TABLE_FIELDS = {
         "posts": {
             "site", "url", "title", "author", "content", "score", "comment_count",
-            "published_at", "thumbnail", "link_flair", "domain", "nsfw",
+            "published_at", "link_flair", "domain", "nsfw",
             "is_self_post", "permalink", "quality_issues", "metadata", "scraped_at",
         },
         "products": {

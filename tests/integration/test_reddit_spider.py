@@ -77,14 +77,6 @@ class TestPostItemFields:
 
 
 class TestPostItemNewFields:
-    def test_thumbnail_field_default(self):
-        item = PostItem(site="reddit", url="http://x.com/1", title="Test")
-        assert item.get("thumbnail") is None
-
-    def test_thumbnail_field_when_set(self):
-        item = PostItem(site="reddit", url="http://x.com/1", title="Test", thumbnail="self")
-        assert item["thumbnail"] == "self"
-
     def test_link_flair_field_default(self):
         item = PostItem(site="reddit", url="http://x.com/1", title="Test")
         assert item.get("link_flair") is None
@@ -154,7 +146,6 @@ class TestRedditJSONSearchFixture:
             score=first["score"],
             comment_count=first["num_comments"],
             published_at="2026-05-05T00:00:00Z",
-            thumbnail=first.get("thumbnail", ""),
             link_flair=first.get("link_flair_text", ""),
             domain=first.get("domain", ""),
             nsfw=first.get("over_18", False),
@@ -172,7 +163,6 @@ class TestRedditJSONSearchFixture:
         assert item["score"] == 245
         assert item["comment_count"] == 67
         assert item["is_self_post"] is True
-        assert item["thumbnail"] == "self"
         assert item["link_flair"] == "Discussion"
         assert item["metadata"]["strategy"] == "json_api"
 
@@ -183,7 +173,6 @@ class TestRedditJSONSearchFixture:
         assert len(nsfw_post) == 1
         assert nsfw_post[0]["data"]["title"] == "NSFW: Adult content discussion thread"
         assert nsfw_post[0]["data"]["over_18"] is True
-        assert nsfw_post[0]["data"]["thumbnail"] == "nsfw"
 
     def test_build_post_item_from_link_post(self, reddit_json_search):
         children = reddit_json_search["data"]["children"]

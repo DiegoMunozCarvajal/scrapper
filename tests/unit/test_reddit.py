@@ -1021,7 +1021,6 @@ class TestRedditSpider:
                 "created_utc": 1746403200.0,
                 "selftext": "Post content here.",
                 "selftext_html": "<p>Post content</p>",
-                "thumbnail": "self",
                 "link_flair_text": "Discussion",
                 "domain": "self.test",
                 "over_18": False,
@@ -1044,7 +1043,6 @@ class TestRedditSpider:
             "num_comments": 3,
             "created_utc": 1746403200.0,
             "selftext": "Content",
-            "thumbnail": "self",
             "link_flair_text": "Discussion",
             "domain": "self.test",
             "over_18": False,
@@ -1062,7 +1060,6 @@ class TestRedditSpider:
         assert item["title"] == "Self Post"
         assert item["content"] == "Content"
         assert item["is_self_post"] is True
-        assert item["thumbnail"] == "self"
         assert item["link_flair"] == "Discussion"
         assert item["domain"] == "self.test"
         assert item["nsfw"] is False
@@ -1258,7 +1255,6 @@ class TestRedditSpider:
             "num_comments": 50,
             "created_utc": 1746403200.0,
             "selftext": "Full content",
-            "thumbnail": "self",
             "link_flair_text": "Flair",
             "domain": "self.test",
             "over_18": False,
@@ -1272,7 +1268,6 @@ class TestRedditSpider:
         assert item["comment_count"] == 50
         assert item["author"] == "u_tester"
         assert item["content"] == "Full content"
-        assert item["thumbnail"] == "self"
         assert item["link_flair"] == "Flair"
         assert item["domain"] == "self.test"
         assert item["nsfw"] is False
@@ -1330,7 +1325,6 @@ class TestRedditSpider:
             "score": 42,
             "comment_count": 7,
             "published_at": "2026-05-05T00:00:00Z",
-            "thumbnail": "self",
             "link_flair": "Discussion",
             "domain": "self.test",
             "nsfw": False,

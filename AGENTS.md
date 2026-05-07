@@ -114,7 +114,7 @@ curl -s http://localhost:6800/daemonstatus.json
 
 ### Google Cloud Run (producción)
 
-Arquitectura: **Cloud Run Jobs** (one-off containers) + **Cloud Scheduler** (cron triggers). Resultados van a Supabase.
+Arquitectura: **Cloud Run Jobs** (one-off containers) + **Cloud Scheduler** (cron triggers) + **Secret Manager** (configuración externalizada). Resultados van a Supabase.
 
 ```bash
 # 0. Configurar variables de entorno
@@ -124,15 +124,39 @@ export SUPABASE_URL=https://tu-proyecto.supabase.co
 export SUPABASE_KEY=tu-service-role-key
 export OPENAI_API_KEY=sk-...
 
-# 1. Deploy completo (build + push + jobs + schedulers)
+# 1. Deploy completo (build + push + jobs + schedulers + secrets)
 ./deploy_cloud_run.sh
 
-# 2. Ejecutar un job manualmente (debug)
+# 2. Deploy incremental (sin rebuild, solo cambios de config en queries.json)
+./deploy_cloud_run.sh --skip-build
+
+# 3. Deploy incremental para un spider específico
+./deploy_cloud_run.sh --skip-build --spider reddit
+
+# 4. Ejecutar un job manualmente (debug)
 gcloud run jobs execute scrapper-reddit --region us-central1
 
-# 3. Ver logs de una ejecución
+# 5. Ver logs de una ejecución
 gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=scrapper-reddit" --limit 50
 ```
+
+**Flags del deploy script:**
+
+| Flag | Descripción |
+|------|-------------|
+| `--skip-build` / `-s` | Omite build + push de Docker. Reutiliza imagen `latest`. Solo actualiza secrets, jobs y schedulers. |
+| `--spider <name>` / `-n <name>` | Procesa solo el spider especificado (repetible). Sin este flag procesa todos. |
+
+**¿Cuándo usar `--skip-build`?**
+- Agregar/quitar/modificar queries de un spider existente
+- Cambiar schedule, CPU, memory o timeout
+- Agregar un job alias que usa un spider existente (ej. `"reddit-evening"` → `"spider": "reddit"`)
+
+**¿Cuándo NO usar `--skip-build`?**
+- Nuevo spider con código Python nuevo (requiere rebuild de la imagen)
+- Cambios en dependencias o configuración de la imagen Docker
+
+**Secret Manager:** `queries.json` se externaliza como secret `queries-config`. Cada job lo monta como env var `QUERIES_CONFIG`. El runner lee de Secret Manager primero, con fallback al archivo local para desarrollo. Credenciales de DataImpulse (`DATAIMPULSE_USER`, `DATAIMPULSE_PASSWORD`) también se almacenan como secrets.
 
 **Configuración por spider** en `queries.json`:
 
@@ -160,7 +184,7 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 - `src/scrapper/models.py` — `Post`, `Product`, `ScrapeResult` dataclasses (used across spiders and pipelines)
 - `src/scrapper/pipelines.py` — Validate → DataQuality → Dedup → Supabase upsert (with 3 retries + DropItem on failure)
 - `src/scrapper/pagination.py` — `PaginationDetector` class for detecting next-page URLs and pagination type (links/load-more/scroll) from HTML
-- `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright + Decodo residential proxy support with health tracking), UA rotation (incl. Playwright)
+- `src/scrapper/middlewares.py` — Retry backoff, proxy rotation (incl. Playwright + DataImpulse residential proxy support with health tracking), UA rotation (incl. Playwright)
 - `src/scrapper/stealth_handler.py` — Custom Playwright download handler wrapping `playwright-stealth` v2 + canvas/WebGL spoofing + cookie persistence + human simulation (with logging). **Has fallback for both old and new playwright-stealth APIs** (Linux wheels ship a different API than macOS).
 - `src/scrapper/curl_cffi_handler.py` — Composite download handler inheriting from `ScrapyPlaywrightStealthDownloadHandler`: Playwright for JS, curl-cffi with TLS impersonation for everything else
 - `src/scrapper/llm_extractor.py` — `LLMExtractor` class (OpenAI gpt-4o-mini, JSON mode, SQLite cache) + shared `llm_fallback()` function (properly closes cache)
@@ -174,16 +198,16 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 - `src/scrapper/utils.py` — `USER_AGENTS`, `random_user_agent()`, `ensure_dir()`, `slugify()`, `FakeFailure`
 - `setup.py` — Minimal shim for `scrapyd-deploy` compatibility (Scrapyd needs `entry_points` for spider discovery; `setup()` reads package config from `pyproject.toml`)
 - `Dockerfile` — Multi-stage-like build with `busybox-static` (non-root crond), Playwright Chromium, BuildKit cache mount, non-root `appuser` (UID 10001), healthcheck via Scrapyd API. **Para uso local con Docker Compose.**
-- `Dockerfile.cloudrun` — Imagen optimizada para Cloud Run Jobs (one-off, sin Scrapyd/crond). Usa `playwright install chromium` + entrypoint `cloud_run_runner.py`.
+- `Dockerfile.cloudrun` — Imagen optimizada para Cloud Run Jobs (one-off, sin Scrapyd/crond). Usa `playwright install chromium` + entrypoint `cloud_run_runner.py`. Non-root `appuser` (UID 10001).
 - `docker-compose.yml` — Single-service stack: `cap_drop: ALL`, `no-new-privileges`, `shm_size: 2gb` (Chromium), volume mounts for persistence. **Para uso local.**
 - `docker-entrypoint.sh` — Graceful shutdown (SIGTERM → SIGKILL after 10s), writability checks, SQLite file bootstrap, crontab generation, Scrapyd + dashboard startup, log streaming. **Para Docker local.**
 - `bin/health-check.sh` — Scrapyd health monitoring script
-- `scripts/setup_supabase.sql` — DB schema with RLS policies (5 tables: sites, scrape_jobs, posts, products, scraped_pages). **Run in Supabase SQL Editor to initialize.** Idempotent (`IF NOT EXISTS`).
+- `scripts/setup_supabase.sql` — DB schema with RLS policies (6 tables: sites, scrape_jobs, posts, products, scraped_pages, spider_locks). Incluye función RPC `acquire_spider_lock()` para locks atómicos. **Run in Supabase SQL Editor to initialize.** Idempotent (`IF NOT EXISTS`).
 - `generate_schedule.py` — Generates crontab from `queries.json` for Scrapyd scheduling (uses busybox crond in Docker, not scrapyd.conf schedule). **Para Docker local.**
-- `queries.json` — Configuración de spiders, queries, schedules y recursos de Cloud Run (leído por `cloud_run_runner.py`, `runner_local.py`, `generate_schedule.py` y `deploy_cloud_run.sh`)
+- `queries.json` — Configuración de spiders, queries, schedules y recursos de Cloud Run (leído por `cloud_run_runner.py`, `runner_local.py`, `generate_schedule.py` y `deploy_cloud_run.sh`). En Cloud Run se externaliza vía Secret Manager como env var `QUERIES_CONFIG`.
 - `runner_local.py` — Ejecuta spiders localmente desde `queries.json` con salida timestamped o acumulativa. **Para desarrollo/pruebas.**
-- `cloud_run_runner.py` — Entrypoint para Cloud Run Jobs. Lee `queries.json`, ejecuta un spider y sale. **Para producción en GCP.**
-- `deploy_cloud_run.sh` — Script de deployment: build + push a Artifact Registry, crea/actualiza Cloud Run Jobs + Cloud Schedulers. Lee config de `queries.json`.
+- `cloud_run_runner.py` — Entrypoint para Cloud Run Jobs. Lee configuración desde `QUERIES_CONFIG` (Secret Manager) con fallback a `queries.json` local. **Para producción en GCP.**
+- `deploy_cloud_run.sh` — Script de deployment: build + push a Artifact Registry, crea/actualiza secrets en Secret Manager, Cloud Run Jobs + Cloud Schedulers. Soporta `--skip-build` y `--spider` para deploys incrementales.
 
 ## Spider Status
 
@@ -204,11 +228,11 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 |----------|---------|-------------|
 | `SUPABASE_URL` | — | Supabase project URL |
 | `SUPABASE_KEY` | — | Supabase service role key (⚠️ bypasses RLS) |
-| `PROXY_LIST` | — | Comma-separated proxy URLs (takes precedence over Decodo) |
-| `DECODO_USER` | — | Decodo residential proxy username |
-| `DECODO_PASSWORD` | — | Decodo residential proxy password |
-| `DECODO_ENDPOINT` | `gate.decodo.com` | Decodo proxy gateway endpoint |
-| `DECODO_PORT` | `7000` | Decodo proxy gateway port |
+| `PROXY_LIST` | — | Comma-separated proxy URLs (takes precedence over DataImpulse) |
+| `DATAIMPULSE_USER` | — | DataImpulse residential proxy username |
+| `DATAIMPULSE_PASSWORD` | — | DataImpulse residential proxy password |
+| `DATAIMPULSE_ENDPOINT` | `gw.dataimpulse.com` | DataImpulse proxy gateway endpoint |
+| `DATAIMPULSE_PORT` | `823` | DataImpulse proxy gateway port |
 | `HEADLESS` | `true` | Run Playwright in headless mode |
 | `PLAYWRIGHT_HUMAN_SIMULATION` | `true` | Enable random scroll/delay + canvas/WebGL spoofing |
 | `OPENAI_API_KEY` | — | OpenAI API key for LLM fallback extraction |
@@ -228,12 +252,13 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sc
 | `ALERT_EMAIL_PASSWORD` | — | SMTP password (Gmail App Password) |
 | `ALERT_EMAIL_TO` | — | Recipient email address |
 | `ALERT_ERROR_THRESHOLD` | `5` | Error count to trigger email alert |
+| `QUERIES_CONFIG` | — | Contenido de `queries.json` como string JSON (montado desde Secret Manager en Cloud Run) |
 
 > **Nota:** Las variables `SCHEDULE_ENABLED` y `SCRAPYD_API_URL` solo aplican al setup Docker local con Scrapyd.
 
 ## Testing
 
-- 320 tests passing (items, models, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination)
+- 398 tests passing (items, models, pipelines, settings, middleware, spiders, stealth, llm_cache, llm_extractor, prompts, curl_cffi, utils, extensions, dashboard, rag_export, generic, pagination, cloud_run_runner)
 - 65% coverage (core modules at 77-100%, spiders need Playwright for full coverage)
 - Integration tests use fixture files (XML/JSON/HTML) for deterministic offline testing
 - `asyncio_mode = "auto"` in pyproject.toml

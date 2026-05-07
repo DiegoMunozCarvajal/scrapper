@@ -11,7 +11,6 @@ class PostItem(scrapy.Item):
     score = scrapy.Field()
     comment_count = scrapy.Field()
     published_at = scrapy.Field()
-    thumbnail = scrapy.Field()
     link_flair = scrapy.Field()
     domain = scrapy.Field()
     nsfw = scrapy.Field()

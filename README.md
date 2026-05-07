@@ -159,6 +159,166 @@ curl -s 'http://localhost:6800/listjobs.json?project=scrapper'  # Job list
 - **Linux only**: bind-mount volumes are owned by UID 10001. If permissions fail, run `chown -R 10001:10001 .` in the project root.
 - Chromium sandbox requires `shm_size: 2gb` (set in `docker-compose.yml`).
 
+## Google Cloud Run (production)
+
+Deploy to Cloud Run Jobs + Cloud Scheduler. Spider config is externalized via Secret Manager, enabling zero-rebuild config changes.
+
+```bash
+# Prerequisites
+export PROJECT_ID=your-gcp-project
+export SUPABASE_URL=https://your-project.supabase.co
+export SUPABASE_KEY=your-service-role-key
+export OPENAI_API_KEY=sk-...
+
+# Full deploy (code + config)
+./deploy_cloud_run.sh
+
+# Incremental deploy (config only, no Docker rebuild)
+./deploy_cloud_run.sh --skip-build
+
+# Incremental deploy for a specific spider
+./deploy_cloud_run.sh --skip-build --spider reddit
+
+# Execute a job manually
+gcloud run jobs execute scrapper-reddit --region us-central1
+
+# View execution logs
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=scrapper-reddit" --limit 50
+```
+
+### queries.json format for Cloud Run
+
+```json
+{
+  "reddit": {
+    "schedule": "0 10 * * *",
+    "cloud_run": { "cpu": 1, "memory": "1Gi", "timeout": "45m" },
+    "queries": [
+      { "subreddit": "python", "limit": 50 }
+    ]
+  },
+  "reddit-evening": {
+    "spider": "reddit",
+    "schedule": "0 22 * * *",
+    "cloud_run": { "cpu": 1, "memory": "1Gi", "timeout": "45m" },
+    "queries": [
+      { "subreddit": "django", "limit": 50 }
+    ]
+  }
+}
+```
+
+The `spider` field maps job names to Scrapy spider names (e.g. `reddit-evening` → `reddit`).
+
+## Reddit Query Guide
+
+The Reddit spider accepts these `-a` parameters, all usable in `queries.json`:
+
+### Query parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `subreddit` | string | — | Subreddit to scrape (e.g. `"dating"`, `"AskWomen"`) |
+| `query` | string | — | Search term within Reddit. Omit to browse subreddit listings. |
+| `limit` | int | `25` | Max posts to scrape (capped at 100) |
+| `sort` | string | `"new"` | Sort order: `"new"`, `"hot"`, `"top"`, `"rising"`, `"controversial"` |
+| `time_filter` | string | auto | Time range: `"hour"`, `"day"`, `"week"`, `"month"`, `"year"`, `"all"`. Auto-calculated from last scrape if unset. |
+| `nsfw` | string | `"include"` | `"include"`, `"exclude"`, or `"only"` |
+| `include_comments` | bool | `false` | Fetch top comments for each post (up to 5) |
+| `date_from` | string | — | Start date for historical scraping (`"YYYY-MM-DD"`) |
+| `date_to` | string | — | End date for historical scraping (`"YYYY-MM-DD"`) |
+
+### Scraping modes
+
+**Subreddit browsing** (no query, just subreddit):
+```json
+{ "subreddit": "dating", "limit": 50 }
+```
+Scrapes the subreddit's listing sorted by `sort` (default: new).
+
+**Keyword search within a subreddit:**
+```json
+{ "subreddit": "dating", "query": "first date tips", "limit": 30 }
+```
+
+**Keyword search across all of Reddit:**
+```json
+{ "query": "python programming", "limit": 25, "sort": "top", "time_filter": "week" }
+```
+
+**Historical date-range scraping** (uses PullPush archive API):
+```json
+{ "subreddit": "dating", "date_from": "2025-01-01", "date_to": "2025-06-30", "limit": 100 }
+```
+When `date_from` or `date_to` is set, the spider switches from native Reddit JSON API to PullPush, which supports date-filtered queries the official API doesn't.
+
+**Full featured query:**
+```json
+{
+  "subreddit": "AskWomen",
+  "query": "career advice",
+  "limit": 50,
+  "sort": "top",
+  "time_filter": "month",
+  "nsfw": "exclude",
+  "include_comments": true
+}
+```
+
+### Scraping strategy
+
+The spider tries strategies in order with automatic fallback:
+
+```
+PullPush (if date_from/date_to set) → falls back to HTML search
+JSON API (native old.reddit.com) → falls back to RSS → falls back to HTML → falls back to LLM
+```
+
+The strategy used is recorded in `metadata.strategy` on each item.
+
+### Modifying queries in Cloud Run
+
+Queries are stored in `queries.json` and externalized to Secret Manager. Changes don't require rebuilding the Docker image.
+
+```bash
+# 1. Edit queries.json locally
+vim queries.json
+
+# 2. Update only the changed spider (no rebuild)
+./deploy_cloud_run.sh --skip-build --spider reddit
+
+# 3. Or update all spiders
+./deploy_cloud_run.sh --skip-build
+
+# 4. Verify by running the job manually
+gcloud run jobs execute scrapper-reddit --region us-central1
+
+# 5. Check logs
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=scrapper-reddit" --limit 30
+```
+
+### Adding a new job alias
+
+Same spider, different schedule or queries:
+
+```json
+// Add to queries.json:
+"reddit-nsfw": {
+  "spider": "reddit",
+  "schedule": "0 2 * * 0",
+  "cloud_run": { "cpu": 1, "memory": "1Gi", "timeout": "30m" },
+  "queries": [
+    { "subreddit": "BDSMcommunity", "limit": 30, "nsfw": "only" }
+  ]
+}
+```
+
+```bash
+./deploy_cloud_run.sh --skip-build --spider reddit-nsfw
+```
+
+This creates a new Cloud Run Job + Scheduler using the existing `reddit` spider code. No rebuild needed since the spider code is already in the image.
+
 ## Tests
 
 ```bash

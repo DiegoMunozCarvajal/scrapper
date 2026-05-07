@@ -19,19 +19,6 @@ INSERT INTO sites (name, type, base_url) VALUES
     ('hotmart', 'product', 'https://hotmart.com')
 ON CONFLICT (name) DO NOTHING;
 
--- ── Scrape job tracking ─────────────────────────────
-CREATE TABLE IF NOT EXISTS scrape_jobs (
-    id            BIGSERIAL PRIMARY KEY,
-    site_id       INTEGER REFERENCES sites(id),
-    query         TEXT NOT NULL,
-    status        TEXT DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed')),
-    items_scraped INTEGER DEFAULT 0,
-    error_message TEXT,
-    started_at    TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- ── Social / Q&A posts ──────────────────────────────
 CREATE TABLE IF NOT EXISTS posts (
     id            BIGSERIAL PRIMARY KEY,
@@ -51,7 +38,6 @@ CREATE TABLE IF NOT EXISTS posts (
     permalink     TEXT,
     quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
-    scrape_job_id INTEGER REFERENCES scrape_jobs(id),
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(site, url)
 );
@@ -70,7 +56,6 @@ CREATE TABLE IF NOT EXISTS products (
     availability  TEXT,
     quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
-    scrape_job_id INTEGER REFERENCES scrape_jobs(id),
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(site, url)
 );
@@ -92,7 +77,6 @@ CREATE TABLE IF NOT EXISTS scraped_pages (
     published_at  TEXT,
     quality_issues JSONB DEFAULT '[]',
     metadata      JSONB DEFAULT '{}',
-    scrape_job_id INTEGER REFERENCES scrape_jobs(id),
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
     created_at    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(site, url)
@@ -107,14 +91,13 @@ CREATE INDEX IF NOT EXISTS idx_products_scraped_at ON products(scraped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scraped_pages_type ON scraped_pages (page_type);
 CREATE INDEX IF NOT EXISTS idx_scraped_pages_site ON scraped_pages (site);
 CREATE INDEX IF NOT EXISTS idx_scraped_pages_scraped_at ON scraped_pages (scraped_at DESC);
-CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status);
+
 
 -- ── Row Level Security (RLS) ─────────────────────
 ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scraped_pages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scrape_jobs ENABLE ROW LEVEL SECURITY;
 
 -- Public read access (only via anon/authenticated roles)
 DO $$ BEGIN
@@ -158,11 +141,6 @@ DO $$ BEGIN
     CREATE POLICY "Service can do anything with sites" ON sites FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
-DO $$ BEGIN
-    DROP POLICY IF EXISTS "Service can do anything with scrape_jobs" ON scrape_jobs;
-    CREATE POLICY "Service can do anything with scrape_jobs" ON scrape_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
-END $$;
-
 -- ── Migrations (idempotent) ─────────────────────
 -- Add quality_issues column if missing (v0.4+)
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS quality_issues JSONB DEFAULT '[]';
@@ -173,7 +151,7 @@ ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS category TEXT;
 
 -- Add Reddit metadata columns emitted by PostItem (v0.6+)
-ALTER TABLE posts ADD COLUMN IF NOT EXISTS thumbnail TEXT;
+-- thumbnail removed (v0.8+)
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_flair TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS domain TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS nsfw BOOLEAN DEFAULT FALSE;
@@ -195,3 +173,24 @@ DO $$ BEGIN
     DROP POLICY IF EXISTS "Service can do anything with spider_locks" ON spider_locks;
     CREATE POLICY "Service can do anything with spider_locks" ON spider_locks FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
+
+-- Función RPC atómica para adquirir lock (evita race conditions)
+CREATE OR REPLACE FUNCTION acquire_spider_lock(
+    p_spider TEXT,
+    p_locked_at TIMESTAMPTZ,
+    p_locked_until TIMESTAMPTZ
+) RETURNS BOOLEAN AS $$
+BEGIN
+    -- Limpiar locks expirados
+    DELETE FROM spider_locks WHERE locked_until < NOW();
+
+    -- Intentar insertar
+    BEGIN
+        INSERT INTO spider_locks (spider, locked_at, locked_until, status)
+        VALUES (p_spider, p_locked_at, p_locked_until, 'running');
+        RETURN TRUE;
+    EXCEPTION WHEN unique_violation THEN
+        RETURN FALSE;
+    END;
+END;
+$$ LANGUAGE plpgsql;

@@ -29,6 +29,26 @@ log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
+# ── Parsear flags ──
+SKIP_BUILD=false
+SELECTED_SPIDERS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -s|--skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        -n|--spider)
+            SELECTED_SPIDERS+=("$2")
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # ── Validaciones ──
 if ! command -v gcloud &>/dev/null; then
     log_error "gcloud CLI no está instalado. Instálalo desde: https://cloud.google.com/sdk/docs/install"
@@ -86,16 +106,26 @@ for KEY in $(jq -r 'keys[]' "$QUERIES_FILE"); do
 done
 log_info "queries.json válido."
 
-# ── Leer variables de entorno requeridas ──
-if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ] || [ -z "$OPENAI_API_KEY" ]; then
-    log_warn "Variables de entorno faltantes. Intentando leer desde .env..."
-    if [ -f "${SCRIPT_DIR}/.env" ]; then
-        set -a
-        source "${SCRIPT_DIR}/.env"
-        set +a
-    fi
+# ── Validar spiders seleccionados con -n ──
+if [ ${#SELECTED_SPIDERS[@]} -gt 0 ]; then
+    for SEL in "${SELECTED_SPIDERS[@]}"; do
+        if ! jq -e ".\"$SEL\"" "$QUERIES_FILE" &>/dev/null; then
+            log_error "Spider '$SEL' no existe en queries.json"
+            exit 1
+        fi
+    done
+    log_info "Spiders seleccionados con -n: ${SELECTED_SPIDERS[*]}"
 fi
 
+# ── Cargar .env si existe (permite sobreescribir variables del shell) ──
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+    log_info "Cargando variables desde ${SCRIPT_DIR}/.env"
+    set -a
+    source "${SCRIPT_DIR}/.env"
+    set +a
+fi
+
+# ── Validar variables requeridas ──
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ] || [ -z "$OPENAI_API_KEY" ]; then
     log_error "Faltan variables requeridas: SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY"
     echo "Configúralas con:"
@@ -103,6 +133,18 @@ if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ] || [ -z "$OPENAI_API_KEY" ];
     echo "  export SUPABASE_KEY=tu-service-role-key"
     echo "  export OPENAI_API_KEY=sk-..."
     exit 1
+fi
+
+# ── Variables opcionales: DataImpulse proxies ──
+DATAIMPULSE_USER="${DATAIMPULSE_USER:-}"
+DATAIMPULSE_PASSWORD="${DATAIMPULSE_PASSWORD:-}"
+DATAIMPULSE_ENDPOINT="${DATAIMPULSE_ENDPOINT:-gw.dataimpulse.com}"
+DATAIMPULSE_PORT="${DATAIMPULSE_PORT:-823}"
+
+DATAIMPULSE_ENV_VARS=""
+if [ -n "$DATAIMPULSE_USER" ]; then
+    DATAIMPULSE_ENV_VARS="DATAIMPULSE_ENDPOINT=${DATAIMPULSE_ENDPOINT},DATAIMPULSE_PORT=${DATAIMPULSE_PORT}"
+    log_info "DataImpulse proxy configurado: ${DATAIMPULSE_USER}@${DATAIMPULSE_ENDPOINT}:${DATAIMPULSE_PORT}"
 fi
 
 # ── Service account dedicada (mejor seguridad que la default) ──
@@ -156,8 +198,10 @@ gcloud artifacts repositories describe "$REPO_NAME" --location="$REGION" --proje
 }
 
 # ── Configurar Docker auth para Artifact Registry ──
-log_info "Autenticando Docker con Artifact Registry..."
-gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+if [ "$SKIP_BUILD" != true ]; then
+    log_info "Autenticando Docker con Artifact Registry..."
+    gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+fi
 
 # ── Secret Manager: crear/actualizar secrets para API keys ──
 log_info "Configurando secrets en Secret Manager..."
@@ -175,11 +219,35 @@ ensure_secret() {
     fi
 }
 
+ensure_secret_from_file() {
+    local name="$1" file="$2"
+    if gcloud secrets describe "$name" --project="$PROJECT_ID" &>/dev/null; then
+        gcloud secrets versions add "$name" --data-file="$file" --project="$PROJECT_ID"
+        log_info "  Secret '${name}' actualizado desde archivo."
+    else
+        gcloud secrets create "$name" \
+            --replication-policy=automatic \
+            --data-file="$file" \
+            --project="$PROJECT_ID"
+        log_info "  Secret '${name}' creado desde archivo."
+    fi
+}
+
 ensure_secret "supabase-key" "$SUPABASE_KEY"
 ensure_secret "openai-api-key" "$OPENAI_API_KEY"
+ensure_secret_from_file "queries-config" "$QUERIES_FILE"
+
+if [ -n "$DATAIMPULSE_USER" ]; then
+    ensure_secret "dataimpulse-user" "$DATAIMPULSE_USER"
+    ensure_secret "dataimpulse-password" "$DATAIMPULSE_PASSWORD"
+fi
 
 log_info "Otorgando acceso a Secret Manager para la service account..."
-for SECRET_NAME in supabase-key openai-api-key; do
+ALL_SECRETS="supabase-key openai-api-key queries-config"
+if [ -n "$DATAIMPULSE_USER" ]; then
+    ALL_SECRETS="$ALL_SECRETS dataimpulse-user dataimpulse-password"
+fi
+for SECRET_NAME in $ALL_SECRETS; do
     gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
         --member="serviceAccount:${SA_EMAIL}" \
         --role="roles/secretmanager.secretAccessor" \
@@ -187,31 +255,58 @@ for SECRET_NAME in supabase-key openai-api-key; do
         &>/dev/null || true
 done
 
-# ── Build + push imagen ──
-log_info "Build de imagen Docker (puede tomar varios minutos)..."
-gcloud builds submit "${SCRIPT_DIR}" \
-    --config="${SCRIPT_DIR}/cloudbuild.yaml" \
-    --project="$PROJECT_ID" \
-    --substitutions="_REGION=${REGION},_REPO=${REPO_NAME},_IMAGE=${IMAGE_NAME},_TAG=${VERSION_TAG}" \
-    || {
-        log_warn "cloudbuild.yaml falló, usando build directo..."
-        # Build directo: renombramos temporalmente Dockerfile.cloudrun como Dockerfile
-        cp "${SCRIPT_DIR}/Dockerfile.cloudrun" "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp"
-        mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.local"
-        mv "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp" "${SCRIPT_DIR}/Dockerfile"
-        gcloud builds submit "${SCRIPT_DIR}" \
-            --tag "$IMAGE_TAG_VERSIONED" \
-            --project="$PROJECT_ID" \
-            --timeout="20m"
-        # Restaurar nombres originales
-        mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.cloudrun"
-        mv "${SCRIPT_DIR}/Dockerfile.local" "${SCRIPT_DIR}/Dockerfile"
-    }
+# ── Build + push imagen (o skip) ──
+if [ "$SKIP_BUILD" = true ]; then
+    log_warn "⚠️  Modo skip-build: no se reconstruye la imagen Docker."
+    log_warn "    Si cambiaste código Python, los cambios NO se aplicarán."
+
+    log_info "Verificando imagen existente en Artifact Registry..."
+    EXISTING=$(gcloud artifacts docker images list \
+        "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}" \
+        --filter="tags:latest" --format="value(version)" --limit=1 2>/dev/null)
+    if [ -z "$EXISTING" ]; then
+        log_error "No se encontró imagen 'latest' en Artifact Registry."
+        log_error "Ejecuta un deploy completo primero (sin --skip-build)."
+        exit 1
+    fi
+    IMAGE_REF="$IMAGE_TAG"
+    log_info "Usando imagen existente: ${IMAGE_REF}"
+else
+    log_info "Build de imagen Docker (puede tomar varios minutos)..."
+    gcloud builds submit "${SCRIPT_DIR}" \
+        --config="${SCRIPT_DIR}/cloudbuild.yaml" \
+        --project="$PROJECT_ID" \
+        --substitutions="_REGION=${REGION},_REPO=${REPO_NAME},_IMAGE=${IMAGE_NAME},_TAG=${VERSION_TAG}" \
+        || {
+            log_warn "cloudbuild.yaml falló, usando build directo..."
+            cp "${SCRIPT_DIR}/Dockerfile.cloudrun" "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp"
+            mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.local"
+            mv "${SCRIPT_DIR}/Dockerfile.cloudrun.tmp" "${SCRIPT_DIR}/Dockerfile"
+            gcloud builds submit "${SCRIPT_DIR}" \
+                --tag "$IMAGE_TAG_VERSIONED" \
+                --tag "$IMAGE_TAG" \
+                --project="$PROJECT_ID" \
+                --timeout="20m"
+            mv "${SCRIPT_DIR}/Dockerfile" "${SCRIPT_DIR}/Dockerfile.cloudrun"
+            mv "${SCRIPT_DIR}/Dockerfile.local" "${SCRIPT_DIR}/Dockerfile"
+        }
+    IMAGE_REF="$IMAGE_TAG_VERSIONED"
+fi
 
 # ── Leer spiders de queries.json ──
 SPIDERS=$(jq -r 'keys[]' "$QUERIES_FILE")
 
-log_info "Spiders detectados: $(echo $SPIDERS | tr '\n' ' ')"
+if [ ${#SELECTED_SPIDERS[@]} -gt 0 ]; then
+    SPIDERS="${SELECTED_SPIDERS[*]}"
+fi
+
+log_info "Spiders a procesar: $(echo $SPIDERS | tr '\n' ' ')"
+
+# ── Construir string de secrets para jobs ──
+SECRETS_STR="SUPABASE_KEY=supabase-key:latest,OPENAI_API_KEY=openai-api-key:latest,QUERIES_CONFIG=queries-config:latest"
+if [ -n "$DATAIMPULSE_USER" ]; then
+    SECRETS_STR="${SECRETS_STR},DATAIMPULSE_USER=dataimpulse-user:latest,DATAIMPULSE_PASSWORD=dataimpulse-password:latest"
+fi
 
 # ── Crear/actualizar jobs + schedulers ──
 for SPIDER in $SPIDERS; do
@@ -229,35 +324,41 @@ for SPIDER in $SPIDERS; do
     log_info "  Schedule: ${SCHEDULE}"
     log_info "  CPU: ${CPU} | Memory: ${MEMORY} | Timeout: ${TIMEOUT}"
 
+    # Construir lista de env vars (incluye DataImpulse si está configurado)
+    ENV_VARS="SUPABASE_URL=${SUPABASE_URL}"
+    if [ -n "$DATAIMPULSE_ENV_VARS" ]; then
+        ENV_VARS="${ENV_VARS},${DATAIMPULSE_ENV_VARS}"
+    fi
+
     # Crear o actualizar Cloud Run Job
     if gcloud run jobs describe "$JOB_NAME" --region="$REGION" --project="$PROJECT_ID" &>/dev/null; then
         log_info "Actualizando job existente ${JOB_NAME}..."
         gcloud run jobs update "$JOB_NAME" \
-            --image "$IMAGE_TAG_VERSIONED" \
+            --image "$IMAGE_REF" \
             --region "$REGION" \
             --project "$PROJECT_ID" \
             --cpu "${CPU}" \
             --memory "${MEMORY}" \
             --task-timeout "${TIMEOUT}" \
             --args "$SPIDER" \
-            --set-env-vars "SUPABASE_URL=${SUPABASE_URL}" \
-            --set-secrets "SUPABASE_KEY=supabase-key:latest,OPENAI_API_KEY=openai-api-key:latest" \
-            --max-retries 0 \
+            --set-env-vars "$ENV_VARS" \
+            --set-secrets "$SECRETS_STR" \
+            --max-retries 1 \
             --service-account "$SA_EMAIL" \
             --labels "spider=${SPIDER},environment=production,managed-by=deploy-script"
     else
         log_info "Creando job ${JOB_NAME}..."
         gcloud run jobs create "$JOB_NAME" \
-            --image "$IMAGE_TAG_VERSIONED" \
+            --image "$IMAGE_REF" \
             --region "$REGION" \
             --project "$PROJECT_ID" \
             --cpu "${CPU}" \
             --memory "${MEMORY}" \
             --task-timeout "${TIMEOUT}" \
             --args "$SPIDER" \
-            --set-env-vars "SUPABASE_URL=${SUPABASE_URL}" \
-            --set-secrets "SUPABASE_KEY=supabase-key:latest,OPENAI_API_KEY=openai-api-key:latest" \
-            --max-retries 0 \
+            --set-env-vars "$ENV_VARS" \
+            --set-secrets "$SECRETS_STR" \
+            --max-retries 1 \
             --service-account "$SA_EMAIL" \
             --labels "spider=${SPIDER},environment=production,managed-by=deploy-script"
     fi
@@ -296,8 +397,7 @@ done
 log_info "═══════════════════════════════════════════"
 log_info "Deploy completado exitosamente"
 log_info ""
-log_info "Imagen: ${IMAGE_TAG}"
-log_info "Tag versionado: ${IMAGE_TAG_VERSIONED}"
+log_info "Imagen: ${IMAGE_REF}"
 log_info ""
 log_info "Jobs creados:"
 for SPIDER in $SPIDERS; do

@@ -96,11 +96,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 PROXY_LIST = os.getenv("PROXY_LIST", "")
 
-# ── Decodo residential proxy manager ───────
-DECODO_USER = os.getenv("DECODO_USER", "")
-DECODO_PASSWORD = os.getenv("DECODO_PASSWORD", "")
-DECODO_ENDPOINT = os.getenv("DECODO_ENDPOINT", "gate.decodo.com")
-DECODO_PORT = os.getenv("DECODO_PORT", "7000")
+# ── DataImpulse residential proxy manager ───────
+DATAIMPULSE_USER = os.getenv("DATAIMPULSE_USER", "")
+DATAIMPULSE_PASSWORD = os.getenv("DATAIMPULSE_PASSWORD", "")
+DATAIMPULSE_ENDPOINT = os.getenv("DATAIMPULSE_ENDPOINT", "gw.dataimpulse.com")
+DATAIMPULSE_PORT = os.getenv("DATAIMPULSE_PORT", "823")
 
 # ── curl-cffi anti-bot ──────────────────────
 CURL_CFFI_ENABLED = os.getenv("CURL_CFFI_ENABLED", "true").lower() in ("true", "1", "yes")

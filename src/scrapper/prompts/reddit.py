@@ -11,7 +11,6 @@ For each post found, extract these fields:
 - score: upvote count as integer, e.g. 142 (int or 0)
 - comment_count: number of comments as integer, e.g. 23 (int or 0)
 - published_at: date in ISO 8601 format if available (string or null)
-- thumbnail: thumbnail URL, or "self"/"default"/"image"/"nsfw" (string or "")
 - link_flair: post flair/category text (string or "")
 - domain: external link domain, e.g. "github.com" (string or "")
 - nsfw: true if marked NSFW (boolean, default false)
@@ -24,7 +23,7 @@ Rules:
 - Only extract posts from the search results listing, not the sidebar
 
 Return a JSON object with a "posts" key containing an array of objects:
-{"posts": [{"title": "Post Title", "url": "/r/python/comments/...", "author": "u/username", "score": 142, "comment_count": 23, "published_at": "2024-01-01T00:00:00Z", "thumbnail": "self", "link_flair": "Discussion", "domain": "", "nsfw": false, "is_self_post": true, "permalink": "/r/python/comments/abc123/title/"}]}
+{"posts": [{"title": "Post Title", "url": "/r/python/comments/...", "author": "u/username", "score": 142, "comment_count": 23, "published_at": "2024-01-01T00:00:00Z", "link_flair": "Discussion", "domain": "", "nsfw": false, "is_self_post": true, "permalink": "/r/python/comments/abc123/title/"}]}
 
 HTML:
 {html}"""

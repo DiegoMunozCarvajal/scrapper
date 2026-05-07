@@ -440,10 +440,10 @@ class RedditSpider(scrapy.Spider):
             yield self._build_json_request(after=after_fullname, count=count)
 
     def _make_post_item(self, title, url, author="", content="", score=0,
-                        comment_count=0, published_at=None, thumbnail="",
-                        link_flair="", domain="", nsfw=False, is_self_post=False,
-                        permalink="", query=None, strategy="unknown",
-                        subreddit="", post_id="", top_comments=None):
+                            comment_count=0, published_at=None,
+                            link_flair="", domain="", nsfw=False, is_self_post=False,
+                            permalink="", query=None, strategy="unknown",
+                            subreddit="", post_id="", top_comments=None):
         """Centralized PostItem factory for Reddit spider."""
         return PostItem(
             site=self.site,
@@ -454,7 +454,6 @@ class RedditSpider(scrapy.Spider):
             score=score,
             comment_count=comment_count,
             published_at=published_at,
-            thumbnail=thumbnail or "",
             link_flair=link_flair or "",
             domain=domain or "",
             nsfw=nsfw,
@@ -492,7 +491,6 @@ class RedditSpider(scrapy.Spider):
             score=post_data.get("score", 0),
             comment_count=post_data.get("num_comments", 0),
             published_at=published_at,
-            thumbnail=post_data.get("thumbnail", ""),
             link_flair=post_data.get("link_flair_text", ""),
             domain=post_data.get("domain", ""),
             nsfw=post_data.get("over_18", False),
@@ -528,7 +526,6 @@ class RedditSpider(scrapy.Spider):
             "score": post_data.get("score", 0),
             "comment_count": post_data.get("num_comments", 0),
             "published_at": published_at,
-            "thumbnail": post_data.get("thumbnail", ""),
             "link_flair": post_data.get("link_flair_text", ""),
             "domain": post_data.get("domain", ""),
             "nsfw": post_data.get("over_18", False),
@@ -779,7 +776,6 @@ class RedditSpider(scrapy.Spider):
                 score=item_data.get("score", 0),
                 comment_count=item_data.get("num_comments", 0),
                 published_at=published_at,
-                thumbnail=item_data.get("thumbnail", "") or "",
                 link_flair=item_data.get("link_flair_text", "") or "",
                 domain=item_data.get("domain", "") or "",
                 nsfw=item_data.get("over_18", False),
@@ -1129,7 +1125,6 @@ class RedditSpider(scrapy.Spider):
                 "score": json_data.get("score", 0),
                 "comment_count": num_comments,
                 "published_at": published_at,
-                "thumbnail": json_data.get("thumbnail", ""),
                 "link_flair": json_data.get("link_flair_text", ""),
                 "domain": json_data.get("domain", ""),
                 "nsfw": json_data.get("over_18", False),
@@ -1156,7 +1151,6 @@ class RedditSpider(scrapy.Spider):
                 score=json_data.get("score", 0),
                 comment_count=num_comments,
                 published_at=published_at,
-                thumbnail=json_data.get("thumbnail", ""),
                 link_flair=json_data.get("link_flair_text", ""),
                 domain=json_data.get("domain", ""),
                 nsfw=json_data.get("over_18", False),

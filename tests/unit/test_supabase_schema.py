@@ -6,7 +6,6 @@ SQL = Path("scripts/setup_supabase.sql").read_text()
 
 def test_posts_schema_contains_reddit_item_columns():
     for column in (
-        "thumbnail",
         "link_flair",
         "domain",
         "nsfw",
@@ -22,7 +21,6 @@ def test_write_policies_are_scoped_to_service_role():
     assert "ON products FOR ALL TO service_role" in SQL
     assert "ON scraped_pages FOR ALL TO service_role" in SQL
     assert "ON sites FOR ALL TO service_role" in SQL
-    assert "ON scrape_jobs FOR ALL TO service_role" in SQL
 
 
 def test_public_read_policies_are_select_only():

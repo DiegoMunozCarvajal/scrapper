@@ -54,6 +54,19 @@ class TestProxyRotationMiddleware:
             "server": "http://proxy1:8080"
         }
 
+    def test_sets_proxy_for_playwright_with_auth(self):
+        mw = ProxyRotationMiddleware(
+            proxy_list="http://alice:secret@gw.dataimpulse.com:823"
+        )
+        request = FakeRequest(meta={"playwright": True})
+        result = mw.process_request(request, spider=FakeSpider())
+        assert result is None
+        assert request.meta["playwright_context_kwargs"]["proxy"] == {
+            "server": "http://gw.dataimpulse.com:823",
+            "username": "alice",
+            "password": "secret",
+        }
+
 
 class TestUARotationMiddleware:
     def test_sets_ua_header(self):
@@ -140,21 +153,21 @@ def test_process_response_passes_through_200():
     assert result is response
 
 
-class TestProxyRotationMiddlewareDecodoAndHealth:
-    def test_decodo_fallback_builds_proxy_url(self):
+class TestProxyRotationMiddlewareDataImpulseAndHealth:
+    def test_dataimpulse_fallback_builds_proxy_url(self):
         mw = ProxyRotationMiddleware(
             proxy_list="",
-            decodo_user="alice",
-            decodo_password="secret",
-            decodo_endpoint="gate.decodo.com",
-            decodo_port="7000",
+            dataimpulse_user="alice",
+            dataimpulse_password="secret",
+            dataimpulse_endpoint="gw.dataimpulse.com",
+            dataimpulse_port="823",
         )
         assert len(mw.proxies) == 1
-        assert mw.proxies[0] == "http://alice:secret@gate.decodo.com:7000"
+        assert mw.proxies[0] == "http://alice:secret@gw.dataimpulse.com:823"
 
     def test_safe_proxy_log_strips_credentials(self):
-        url = "http://alice:secret@gate.decodo.com:7000"
-        assert ProxyRotationMiddleware._safe_proxy_log(url) == "http://gate.decodo.com:7000"
+        url = "http://alice:secret@gw.dataimpulse.com:823"
+        assert ProxyRotationMiddleware._safe_proxy_log(url) == "http://gw.dataimpulse.com:823"
 
     def test_process_exception_tracks_proxy_failures(self):
         mw = ProxyRotationMiddleware(proxy_list="http://p1:8080")

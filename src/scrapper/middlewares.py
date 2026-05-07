@@ -50,8 +50,8 @@ class RetryWithBackoffMiddleware(RetryMiddleware):
 class ProxyRotationMiddleware:
     """Rotate through proxy list on each request, including Playwright.
 
-    Supports Decodo residential proxies natively. If *PROXY_LIST* is empty
-    but Decodo credentials are present, a single Decodo gateway URL is built
+    Supports DataImpulse residential proxies natively. If *PROXY_LIST* is empty
+    but DataImpulse credentials are present, a single DataImpulse gateway URL is built
     automatically and used for every request.
     """
 
@@ -60,17 +60,17 @@ class ProxyRotationMiddleware:
     def __init__(
         self,
         proxy_list: str,
-        decodo_user: str = "",
-        decodo_password: str = "",
-        decodo_endpoint: str = "gate.decodo.com",
-        decodo_port: str = "7000",
+        dataimpulse_user: str = "",
+        dataimpulse_password: str = "",
+        dataimpulse_endpoint: str = "gw.dataimpulse.com",
+        dataimpulse_port: str = "823",
     ):
         self.proxies = [p.strip() for p in proxy_list.split(",") if p.strip()]
 
-        # Decodo fallback: build gateway URL when no explicit proxy list is given
-        if not self.proxies and decodo_user and decodo_password:
+        # DataImpulse fallback: build gateway URL when no explicit proxy list is given
+        if not self.proxies and dataimpulse_user and dataimpulse_password:
             self.proxies = [
-                f"http://{decodo_user}:{decodo_password}@{decodo_endpoint}:{decodo_port}"
+                f"http://{dataimpulse_user}:{dataimpulse_password}@{dataimpulse_endpoint}:{dataimpulse_port}"
             ]
 
         self.failed_proxies: dict[str, int] = {}
@@ -80,10 +80,10 @@ class ProxyRotationMiddleware:
         settings = crawler.settings
         return cls(
             proxy_list=settings.get("PROXY_LIST", ""),
-            decodo_user=settings.get("DECODO_USER", ""),
-            decodo_password=settings.get("DECODO_PASSWORD", ""),
-            decodo_endpoint=settings.get("DECODO_ENDPOINT", "gate.decodo.com"),
-            decodo_port=settings.get("DECODO_PORT", "7000"),
+            dataimpulse_user=settings.get("DATAIMPULSE_USER", ""),
+            dataimpulse_password=settings.get("DATAIMPULSE_PASSWORD", ""),
+            dataimpulse_endpoint=settings.get("DATAIMPULSE_ENDPOINT", "gw.dataimpulse.com"),
+            dataimpulse_port=settings.get("DATAIMPULSE_PORT", "823"),
         )
 
     @staticmethod
@@ -92,6 +92,21 @@ class ProxyRotationMiddleware:
         if parsed.port:
             return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
         return f"{parsed.scheme}://{parsed.hostname}"
+
+    @staticmethod
+    def _parse_proxy_for_playwright(proxy_url: str) -> dict:
+        """Parse proxy URL into Playwright's expected dict format.
+
+        Playwright requires username/password as separate keys, not embedded
+        in the URL.
+        """
+        parsed = urlparse(proxy_url)
+        result: dict = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
+        if parsed.username:
+            result["username"] = parsed.username
+        if parsed.password:
+            result["password"] = parsed.password
+        return result
 
     def _pick_proxy(self) -> str | None:
         healthy = [
@@ -112,7 +127,8 @@ class ProxyRotationMiddleware:
 
         if request.meta.get("playwright"):
             context_kwargs = request.meta.setdefault("playwright_context_kwargs", {})
-            context_kwargs["proxy"] = {"server": proxy}
+            # Playwright requires username/password as separate keys
+            context_kwargs["proxy"] = self._parse_proxy_for_playwright(proxy)
         else:
             request.meta["proxy"] = proxy
 
