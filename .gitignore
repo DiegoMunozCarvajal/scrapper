@@ -29,3 +29,4 @@ crontab.txt
 build/
 sentencias/
 docs/
+.coverage

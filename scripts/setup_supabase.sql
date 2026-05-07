@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS posts (
     score         INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     published_at  TIMESTAMPTZ,
-    thumbnail     TEXT,
     link_flair    TEXT,
     domain        TEXT,
     nsfw          BOOLEAN DEFAULT FALSE,
@@ -151,7 +150,7 @@ ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE scraped_pages ADD COLUMN IF NOT EXISTS category TEXT;
 
 -- Add Reddit metadata columns emitted by PostItem (v0.6+)
--- thumbnail removed (v0.8+)
+ALTER TABLE posts DROP COLUMN IF EXISTS thumbnail;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_flair TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS domain TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS nsfw BOOLEAN DEFAULT FALSE;
