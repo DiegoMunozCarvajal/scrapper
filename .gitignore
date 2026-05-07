@@ -13,6 +13,8 @@ playwright-report/
 test-results/
 .worktrees/
 *.json
+!queries.json
+!tests/fixtures/*.json
 *.jsonlines
 *.csv
 llm_cache.db
