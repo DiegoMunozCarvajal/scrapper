@@ -109,3 +109,43 @@ class GenericItem(scrapy.Item):
         super().__init__(*args, **kwargs)
         if "scraped_at" not in self:
             self["scraped_at"] = datetime.now(timezone.utc).isoformat()
+
+
+class OddsItem(scrapy.Item):
+    """Cuotas de apuestas deportivas scrapeadas de sportsbooks."""
+
+    site = scrapy.Field()  # "stake", "pinnacle", etc.
+    sport = scrapy.Field()  # "tennis", "football", "basketball"
+    league = scrapy.Field()  # "ATP", "WTA", "Challenger"
+    tournament = scrapy.Field()  # "Wimbledon", "US Open"
+    match_date = scrapy.Field()  # Fecha programada del partido
+    title = scrapy.Field()  # "Jugador A vs Jugador B" — requerido por ValidatePipeline
+    player_a = scrapy.Field()  # Jugador/Equipo A
+    player_b = scrapy.Field()  # Jugador/Equipo B
+    odds_a = scrapy.Field()  # Cuota decimal jugador A
+    odds_b = scrapy.Field()  # Cuota decimal jugador B
+    surface = scrapy.Field()  # clay, hard, grass, carpet
+    market_type = scrapy.Field()  # "moneyline", "spread", "totals"
+    url = scrapy.Field()  # URL única por partido para dedup
+    metadata = scrapy.Field()  # Datos extra (live, in_play, etc.)
+    quality_issues = scrapy.Field()
+    scraped_at = scrapy.Field()
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            defaults = {
+                "surface": "hard",
+                "market_type": "moneyline",
+                "metadata": {},
+                "quality_issues": [],
+            }
+            if key in defaults:
+                return defaults[key]
+            raise
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "scraped_at" not in self:
+            self["scraped_at"] = datetime.now(timezone.utc).isoformat()

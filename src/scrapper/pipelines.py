@@ -1,11 +1,16 @@
 from collections import defaultdict
+import json
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from loguru import logger
 from scrapy.exceptions import DropItem, NotConfigured
 from supabase import create_client
 
-from .items import GenericItem, PostItem
+from .items import GenericItem, OddsItem, PostItem
 
 
 class DataQualityPipeline:
@@ -156,18 +161,55 @@ class SupabasePipeline:
 
     TABLE_FIELDS = {
         "posts": {
-            "site", "url", "title", "author", "content", "score", "comment_count",
-            "published_at", "link_flair", "domain", "nsfw",
-            "is_self_post", "permalink", "quality_issues", "metadata", "scraped_at",
+            "site",
+            "url",
+            "title",
+            "author",
+            "content",
+            "score",
+            "comment_count",
+            "published_at",
+            "link_flair",
+            "domain",
+            "nsfw",
+            "is_self_post",
+            "permalink",
+            "quality_issues",
+            "metadata",
+            "scraped_at",
         },
         "products": {
-            "site", "url", "title", "price", "currency", "rating", "review_count",
-            "seller", "availability", "quality_issues", "metadata", "scraped_at",
+            "site",
+            "url",
+            "title",
+            "price",
+            "currency",
+            "rating",
+            "review_count",
+            "seller",
+            "availability",
+            "quality_issues",
+            "metadata",
+            "scraped_at",
         },
         "scraped_pages": {
-            "site", "url", "page_type", "title", "content", "price", "currency",
-            "rating", "review_count", "score", "author", "image_url", "category",
-            "published_at", "quality_issues", "metadata", "scraped_at",
+            "site",
+            "url",
+            "page_type",
+            "title",
+            "content",
+            "price",
+            "currency",
+            "rating",
+            "review_count",
+            "score",
+            "author",
+            "image_url",
+            "category",
+            "published_at",
+            "quality_issues",
+            "metadata",
+            "scraped_at",
         },
     }
 
@@ -203,9 +245,7 @@ class SupabasePipeline:
                     f"Supabase upsert attempt {attempt}/3 failed for {item.get('url')}: {e}"
                 )
                 if attempt == 3:
-                    logger.error(
-                        f"Supabase upsert FAILED after 3 retries for {item.get('url')}"
-                    )
+                    logger.error(f"Supabase upsert FAILED after 3 retries for {item.get('url')}")
                     raise DropItem(f"Supabase upsert failed after 3 attempts: {item.get('url')}")
         return item
 
@@ -214,3 +254,83 @@ class SupabasePipeline:
             self.client.postgrest.session.close()
         except Exception:
             pass
+
+
+class SQLiteOddsPipeline:
+    """Write OddsItems to local SQLite database (odds_snapshots table)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._conn = None
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        db_path = crawler.settings.get(
+            "SQLITE_ODDS_DB",
+            str(Path.home() / "sports-betting-system/output/web_app.db"),
+        )
+        return cls(db_path=db_path)
+
+    @property
+    def conn(self):
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+        return self._conn
+
+    def process_item(self, item, spider):
+        if not isinstance(item, OddsItem):
+            return item
+
+        now = datetime.now(timezone.utc).isoformat()
+        row_id = str(uuid.uuid4())
+
+        data = {
+            "id": row_id,
+            "created_at": now,
+            "source": "stake",
+            "site": item.get("site", "stake"),
+            "sport": item.get("sport", "tennis"),
+            "player_a": item.get("player_a", ""),
+            "player_b": item.get("player_b", ""),
+            "stake_odds_a": item.get("odds_a"),
+            "stake_odds_b": item.get("odds_b"),
+            "ref_odds_a": None,
+            "ref_odds_b": None,
+            "tournament": item.get("tournament", ""),
+            "surface": item.get("surface", ""),
+            "match_date": item.get("match_date", ""),
+            "captured_at": now,
+            "validation_status": "raw",
+            "raw_json": json.dumps(dict(item), ensure_ascii=False),
+        }
+
+        try:
+            self.conn.execute(
+                """INSERT OR REPLACE INTO odds_snapshots
+                   (id, created_at, source, site, sport, player_a, player_b,
+                    stake_odds_a, stake_odds_b, ref_odds_a, ref_odds_b,
+                    tournament, surface, match_date, captured_at,
+                    validation_status, raw_json)
+                   VALUES
+                   (:id, :created_at, :source, :site, :sport, :player_a, :player_b,
+                    :stake_odds_a, :stake_odds_b, :ref_odds_a, :ref_odds_b,
+                    :tournament, :surface, :match_date, :captured_at,
+                    :validation_status, :raw_json)""",
+                data,
+            )
+            self.conn.commit()
+        except Exception as e:
+            logger.error(
+                f"SQLite insert failed for {item.get('player_a')} vs {item.get('player_b')}: {e}"
+            )
+            raise DropItem(f"SQLite insert failed: {e}")
+
+        return item
+
+    def close_spider(self, spider):
+        if self._conn:
+            self._conn.close()
+            self._conn = None

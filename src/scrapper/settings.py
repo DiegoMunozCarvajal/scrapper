@@ -41,18 +41,20 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
     "headless": os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes"),
     "args": [
         "--disable-blink-features=AutomationControlled",
-        "--disable-dev-shm-usage",   # Prevent OOM crashes in containers
-        "--disable-gpu",             # No GPU available in Cloud Run
+        "--disable-dev-shm-usage",  # Prevent OOM crashes in containers
+        "--disable-gpu",  # No GPU available in Cloud Run
         "--disable-setuid-sandbox",
-        "--no-sandbox",              # Required for non-root Docker execution
+        "--no-sandbox",  # Required for non-root Docker execution
     ],
 }
 PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 4
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000
 PLAYWRIGHT_ELEM_WAIT_TIMEOUT = 5000
-PLAYWRIGHT_HUMAN_SIMULATION = os.getenv(
-    "PLAYWRIGHT_HUMAN_SIMULATION", "true"
-).lower() in ("true", "1", "yes")
+PLAYWRIGHT_HUMAN_SIMULATION = os.getenv("PLAYWRIGHT_HUMAN_SIMULATION", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # ── RAG-ready export ─────────────────────
 RAG_EXPORT_ENABLED = os.getenv("RAG_EXPORT_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -72,7 +74,7 @@ ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
     "scrapper.pipelines.DataQualityPipeline": 150,
     "scrapper.pipelines.DedupInMemoryPipeline": 200,
-    "scrapper.pipelines.SupabasePipeline": 300,
+    "scrapper.pipelines.SQLiteOddsPipeline": 300,
 }
 
 if RAG_EXPORT_ENABLED:

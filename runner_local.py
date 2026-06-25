@@ -66,18 +66,26 @@ def main():
         for item in items:
             total += 1
 
+            run_args = {}
+            label_parts = []
+
+            if "subreddit" in item:
+                run_args["subreddit"] = item["subreddit"]
+                label_parts.append(f'sub={item["subreddit"]}')
             if "query" in item:
-                # reddit / hotmart
-                query = item["query"]
-                limit = item.get("limit", 10)
-                run_args = {"query": query, "limit": str(limit)}
-                label = f'{spider} q="{query}" limit={limit}'
-            else:
-                # generic
-                url = item["url"]
-                task_type = item.get("type", "article")
-                run_args = {"url": url, "type": task_type}
-                label = f'{spider} url="{url}" type={task_type}'
+                run_args["query"] = item["query"]
+                label_parts.append(f'q="{item["query"]}"')
+            if "url" in item:
+                run_args["url"] = item["url"]
+                if "type" in item:
+                    run_args["type"] = item["type"]
+                label_parts.append(f'url="{item["url"]}"')
+
+            limit = item.get("limit", 10)
+            run_args["limit"] = str(limit)
+            label_parts.append(f"limit={limit}")
+
+            label = f'{spider} {" ".join(label_parts)}'
 
             if args_cli.dry_run:
                 print(f"[dry-run] {label}  (cron: {cron})")
@@ -88,7 +96,12 @@ def main():
                 out = OUTPUT_DIR / f"{spider}_history.jsonl"
             else:
                 # Archivo único por ejecución
-                safe_label = query.replace(" ", "_").replace("/", "_") if "query" in item else "task"
+                if "query" in item:
+                    safe_label = item["query"].replace(" ", "_").replace("/", "_")
+                elif "subreddit" in item:
+                    safe_label = item["subreddit"]
+                else:
+                    safe_label = "task"
                 out = OUTPUT_DIR / f"{ts}" / f"{spider}_{safe_label}.json"
 
             print(f"\n{'='*60}")

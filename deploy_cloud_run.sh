@@ -264,6 +264,12 @@ if [ "$SKIP_BUILD" = true ]; then
     EXISTING=$(gcloud artifacts docker images list \
         "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}" \
         --filter="tags:latest" --format="value(version)" --limit=1 2>/dev/null)
+    # Fallback: algunas versiones de gcloud no filtran tags correctamente
+    if [ -z "$EXISTING" ]; then
+        EXISTING=$(gcloud container images list-tags \
+            "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}" \
+            --filter="tags:latest" --format="value(digest)" --limit=1 2>/dev/null)
+    fi
     if [ -z "$EXISTING" ]; then
         log_error "No se encontró imagen 'latest' en Artifact Registry."
         log_error "Ejecuta un deploy completo primero (sin --skip-build)."
