@@ -58,6 +58,11 @@ def test_stake_parse_kambi_extracts_moneyline_odds():
     assert items[0]["odds_b"] == 2.00
     assert items[0]["tournament"] == "ATP Tour. Mallorca"
     assert items[0]["surface"] in ("clay", "grass", "hard", "carpet")
+    # commence_time must be full ISO datetime, match_date date-only
+    assert items[0]["commence_time"] == "2026-06-25T10:00:00Z", (
+        "commence_time must be full ISO from date_start"
+    )
+    assert items[0]["match_date"] == "2026-06-25", "match_date must be date-only ([:10])"
 
 
 def test_stake_parse_kambi_skips_non_tennis():
