@@ -119,6 +119,7 @@ class OddsItem(scrapy.Item):
     league = scrapy.Field()  # "ATP", "WTA", "Challenger"
     tournament = scrapy.Field()  # "Wimbledon", "US Open"
     match_date = scrapy.Field()  # Fecha programada del partido
+    commence_time = scrapy.Field()  # ISO datetime de inicio (Kambi: date_start)
     title = scrapy.Field()  # "Jugador A vs Jugador B" — requerido por ValidatePipeline
     player_a = scrapy.Field()  # Jugador/Equipo A
     player_b = scrapy.Field()  # Jugador/Equipo B

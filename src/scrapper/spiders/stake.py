@@ -147,8 +147,10 @@ def _parse_kambi_events(data: dict, limit: int = 30) -> list[dict]:
         if odds_a is None or odds_b is None:
             continue
 
+        date_start = evt.get("date_start") or ""
         tournament = evt.get("tournament_name", "unknown")
-        match_date = (evt.get("date_start") or "")[:10] or datetime.now().strftime("%Y-%m-%d")
+        match_date = date_start[:10] if date_start else datetime.now().strftime("%Y-%m-%d")
+        commence_time = date_start if date_start else datetime.now().isoformat()
         surface = _detect_surface(f"{tournament} {player_a} {player_b}")
         event_id = str(evt.get("id", ""))
 
@@ -161,6 +163,7 @@ def _parse_kambi_events(data: dict, limit: int = 30) -> list[dict]:
                 "odds_b": odds_b,
                 "tournament": str(tournament),
                 "match_date": match_date,
+                "commence_time": commence_time,
                 "surface": surface,
             }
         )

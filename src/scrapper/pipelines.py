@@ -302,6 +302,7 @@ class SQLiteOddsPipeline:
             "tournament": item.get("tournament", ""),
             "surface": item.get("surface", ""),
             "match_date": item.get("match_date", ""),
+            "commence_time": item.get("commence_time", item.get("match_date", "")),
             "captured_at": now,
             "validation_status": "raw",
             "raw_json": json.dumps(dict(item), ensure_ascii=False),
@@ -312,12 +313,12 @@ class SQLiteOddsPipeline:
                 """INSERT OR REPLACE INTO odds_snapshots
                    (id, created_at, source, site, sport, player_a, player_b,
                     stake_odds_a, stake_odds_b, ref_odds_a, ref_odds_b,
-                    tournament, surface, match_date, captured_at,
+                    tournament, surface, match_date, commence_time, captured_at,
                     validation_status, raw_json)
                    VALUES
                    (:id, :created_at, :source, :site, :sport, :player_a, :player_b,
                     :stake_odds_a, :stake_odds_b, :ref_odds_a, :ref_odds_b,
-                    :tournament, :surface, :match_date, :captured_at,
+                    :tournament, :surface, :match_date, :commence_time, :captured_at,
                     :validation_status, :raw_json)""",
                 data,
             )
