@@ -218,6 +218,7 @@ class StakeSpider(scrapy.Spider):
                 league=self.league or "unknown",
                 tournament=ri["tournament"],
                 match_date=ri["match_date"],
+                commence_time=ri.get("commence_time", ri["match_date"]),
                 title=f"{ri['player_a']} vs {ri['player_b']}",
                 player_a=ri["player_a"],
                 player_b=ri["player_b"],
