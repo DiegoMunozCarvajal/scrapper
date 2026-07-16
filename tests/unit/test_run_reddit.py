@@ -147,6 +147,8 @@ class TestMain:
         )
         monkeypatch.chdir(tmp_path)
         with patch("run_reddit.run_with_retries", return_value=True):
-            run_reddit.main()
+            with pytest.raises(SystemExit) as exc_info:
+                run_reddit.main()
+            assert exc_info.value.code == 0
         assert (tmp_path / "logs").is_dir()
         assert (tmp_path / "metrics").is_dir()
