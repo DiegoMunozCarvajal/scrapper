@@ -1,0 +1,9 @@
+scrapy>=2.13,<3
+supabase>=2.7,<3
+python-dotenv>=1.0,<2
+feedparser>=6.0,<7
+curl-cffi>=0.7,<1
+openai>=1.0,<3
+portalocker>=2.8,<4
+python-dateutil>=2.9,<3
+loguru>=0.7,<1
