@@ -73,7 +73,7 @@ class RedditSpider(scrapy.Spider):
     def _validate_subreddit(self):
         """Warn if subreddit name looks invalid."""
         if self.subreddit and not self._has_query:
-            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_]{1,20}$', self.subreddit):
+            if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_]{1,20}$", self.subreddit):
                 self.logger.warning(
                     f"Subreddit '{self.subreddit}' looks invalid — may produce no results"
                 )
@@ -89,9 +89,17 @@ class RedditSpider(scrapy.Spider):
             return f"https://old.reddit.com{url}"
         return url
 
-    def _build_reddit_base_url(self, path, query=None, sort=None, time_filter=None,
-                               restrict_sr=False, type_filter=None, raw_json=False,
-                               limit=None):
+    def _build_reddit_base_url(
+        self,
+        path,
+        query=None,
+        sort=None,
+        time_filter=None,
+        restrict_sr=False,
+        type_filter=None,
+        raw_json=False,
+        limit=None,
+    ):
         """Build an old.reddit.com URL with consistent query parameters."""
         params = []
         if query:
@@ -132,23 +140,17 @@ class RedditSpider(scrapy.Spider):
             client = None
             try:
                 client = await create_async_client(supabase_url, supabase_key)
-                q = client.table("posts").select("published_at").eq("site", "reddit")
+                q = client.table(self.name).select("published_at").eq("site", "reddit")
                 if self._has_query:
                     q = q.eq("metadata->>'query'", self.query)
                 if self.subreddit:
                     q = q.eq("metadata->>'subreddit'", self.subreddit)
-                result = await (
-                    q.order("published_at", desc=True)
-                    .limit(1)
-                    .execute()
-                )
+                result = await q.order("published_at", desc=True).limit(1).execute()
                 if result.data:
                     cutoff = result.data[0].get("published_at")
                     if cutoff:
                         self.cutoff_date = cutoff
-                        self.logger.info(
-                            f"Incremental mode: cutoff date = {self.cutoff_date}"
-                        )
+                        self.logger.info(f"Incremental mode: cutoff date = {self.cutoff_date}")
             except Exception as e:
                 self.logger.warning(f"Could not load cutoff date: {e}")
             finally:
@@ -260,8 +262,12 @@ class RedditSpider(scrapy.Spider):
         if self._has_query:
             path = f"/r/{self.subreddit}/search.rss" if self.subreddit else "/search.rss"
             url = self._build_reddit_base_url(
-                path=path, query=query, sort="new", restrict_sr=bool(self.subreddit),
-                time_filter=time_filter, limit=limit,
+                path=path,
+                query=query,
+                sort="new",
+                restrict_sr=bool(self.subreddit),
+                time_filter=time_filter,
+                limit=limit,
             )
         else:
             if self.sort == "new":
@@ -312,9 +318,7 @@ class RedditSpider(scrapy.Spider):
         self.logger.info("Health check: old.reddit.com is reachable")
 
     def _health_check_error(self, failure):
-        self.logger.error(
-            f"Health check failed: old.reddit.com unreachable ({failure.value})"
-        )
+        self.logger.error(f"Health check failed: old.reddit.com unreachable ({failure.value})")
 
     def _build_json_request(self, after=None, count=0):
         query = self.query if self._has_query else None
@@ -325,9 +329,14 @@ class RedditSpider(scrapy.Spider):
         if self._has_query:
             path = f"/r/{self.subreddit}/search.json" if self.subreddit else "/search.json"
             url = self._build_reddit_base_url(
-                path=path, query=query, sort=sort, type_filter="link",
-                restrict_sr=bool(self.subreddit), time_filter=time_filter,
-                raw_json=True, limit=limit,
+                path=path,
+                query=query,
+                sort=sort,
+                type_filter="link",
+                restrict_sr=bool(self.subreddit),
+                time_filter=time_filter,
+                raw_json=True,
+                limit=limit,
             )
         else:
             valid_sorts = ("new", "hot", "top", "rising", "controversial")
@@ -335,7 +344,10 @@ class RedditSpider(scrapy.Spider):
                 sort = "new"
             path = f"/r/{self.subreddit}/{sort}.json"
             url = self._build_reddit_base_url(
-                path=path, time_filter=time_filter, raw_json=True, limit=limit,
+                path=path,
+                time_filter=time_filter,
+                raw_json=True,
+                limit=limit,
             )
 
         if after:
@@ -360,9 +372,7 @@ class RedditSpider(scrapy.Spider):
         try:
             data = json.loads(response.text)
         except (json.JSONDecodeError, ValueError):
-            self.logger.warning(
-                "JSON API: invalid JSON response, falling through to fallback"
-            )
+            self.logger.warning("JSON API: invalid JSON response, falling through to fallback")
             yield self._continue_to_full_search()
             return
 
@@ -392,8 +402,7 @@ class RedditSpider(scrapy.Spider):
             if not title or not permalink:
                 continue
 
-            if title in ("[removed]", "[deleted]") or \
-               post_data.get("author", "") in ("[deleted]",):
+            if title in ("[removed]", "[deleted]") or post_data.get("author", "") in ("[deleted]",):
                 continue
 
             if self.nsfw == "exclude" and post_data.get("over_18"):
@@ -422,28 +431,37 @@ class RedditSpider(scrapy.Spider):
 
         if count == start_count:
             if skipped_old > 0:
-                self.logger.info(
-                    f"JSON API: all {skipped_old} posts older than cutoff, stopping"
-                )
+                self.logger.info(f"JSON API: all {skipped_old} posts older than cutoff, stopping")
                 return
-            self.logger.warning(
-                "JSON API: no usable posts, falling through to HTML search"
-            )
+            self.logger.warning("JSON API: no usable posts, falling through to HTML search")
             yield self._build_html_search_request()
             return
 
         after_fullname = data.get("data", {}).get("after")
         if count < limit and after_fullname:
-            self.logger.info(
-                f"JSON API: page done ({count}/{limit}), fetching next page"
-            )
+            self.logger.info(f"JSON API: page done ({count}/{limit}), fetching next page")
             yield self._build_json_request(after=after_fullname, count=count)
 
-    def _make_post_item(self, title, url, author="", content="", score=0,
-                            comment_count=0, published_at=None,
-                            link_flair="", domain="", nsfw=False, is_self_post=False,
-                            permalink="", query=None, strategy="unknown",
-                            subreddit="", post_id="", top_comments=None):
+    def _make_post_item(
+        self,
+        title,
+        url,
+        author="",
+        content="",
+        score=0,
+        comment_count=0,
+        published_at=None,
+        link_flair="",
+        domain="",
+        nsfw=False,
+        is_self_post=False,
+        permalink="",
+        query=None,
+        strategy="unknown",
+        subreddit="",
+        post_id="",
+        top_comments=None,
+    ):
         """Centralized PostItem factory for Reddit spider."""
         return PostItem(
             site=self.site,
@@ -631,8 +649,12 @@ class RedditSpider(scrapy.Spider):
         if self._has_query:
             path = f"/r/{self.subreddit}/search" if self.subreddit else "/search"
             url = self._build_reddit_base_url(
-                path=path, query=query, sort="new", type_filter="link",
-                restrict_sr=bool(self.subreddit), time_filter=time_filter,
+                path=path,
+                query=query,
+                sort="new",
+                type_filter="link",
+                restrict_sr=bool(self.subreddit),
+                time_filter=time_filter,
             )
         else:
             if self.sort == "new":
@@ -790,14 +812,11 @@ class RedditSpider(scrapy.Spider):
         if scraped_count < limit and len(items) == page_size and min_created_utc:
             date_from_epoch = self._date_str_to_epoch(date_from) if date_from else 0
             if min_created_utc <= date_from_epoch:
-                self.logger.info(
-                    f"PullPush: reached date_from boundary at page {page}, stopping"
-                )
+                self.logger.info(f"PullPush: reached date_from boundary at page {page}, stopping")
                 return
 
             self.logger.info(
-                f"PullPush: page {page} done ({scraped_count}/{limit}), "
-                f"fetching page {page + 1}"
+                f"PullPush: page {page} done ({scraped_count}/{limit}), fetching page {page + 1}"
             )
             yield self._build_pullpush_request(
                 date_from=date_from,
@@ -860,9 +879,7 @@ class RedditSpider(scrapy.Spider):
             self.logger.info("RSS returned no entries, falling back to HTML search")
             yield self._build_html_search_request(query=query, limit=limit)
         elif count == 0:
-            self.logger.info(
-                f"All {filtered_count} RSS entries filtered by cutoff date, stopping"
-            )
+            self.logger.info(f"All {filtered_count} RSS entries filtered by cutoff date, stopping")
 
     def parse(self, response):
         """Fallback: old.reddit.com search results or subreddit listing (Strategy 2)."""
@@ -933,13 +950,9 @@ class RedditSpider(scrapy.Spider):
 
         if count == start_count:
             if cards_skipped_nsfw > 0:
-                self.logger.info(
-                    f"All usable HTML results filtered by nsfw={self.nsfw}, stopping"
-                )
+                self.logger.info(f"All usable HTML results filtered by nsfw={self.nsfw}, stopping")
             elif cards_with_time > 0 and cards_with_time == cards_skipped_old:
-                self.logger.info(
-                    f"All {cards_with_time} dated results older than cutoff, stopping"
-                )
+                self.logger.info(f"All {cards_with_time} dated results older than cutoff, stopping")
             elif cards_with_time == 0 and len(cards) > 0:
                 self.logger.warning(
                     "No <time> tags found in results, "
@@ -947,9 +960,7 @@ class RedditSpider(scrapy.Spider):
                 )
                 yield from llm_fallback(self, response, PostItem)
             else:
-                self.logger.warning(
-                    "HTML selectors found nothing usable, trying LLM fallback"
-                )
+                self.logger.warning("HTML selectors found nothing usable, trying LLM fallback")
                 yield from llm_fallback(self, response, PostItem)
             return
 
@@ -1012,11 +1023,13 @@ class RedditSpider(scrapy.Spider):
             cd = c.get("data", {})
             if not cd.get("body"):
                 continue
-            top_comments.append({
-                "author": cd.get("author", ""),
-                "score": cd.get("score", 0),
-                "body": cd.get("body", ""),
-            })
+            top_comments.append(
+                {
+                    "author": cd.get("author", ""),
+                    "score": cd.get("score", 0),
+                    "body": cd.get("body", ""),
+                }
+            )
 
         yield self._finalize_post_fields(post_fields, top_comments)
 
@@ -1044,26 +1057,19 @@ class RedditSpider(scrapy.Spider):
                     f"Post page returned HTTP {response.status}: {failure.request.url}"
                 )
         else:
-            self.logger.warning(
-                f"Post page request failed after retries: {failure.request.url}"
-            )
+            self.logger.warning(f"Post page request failed after retries: {failure.request.url}")
 
     def _handle_pagination_error(self, failure):
         if failure.check(HttpError):
             response = failure.value.response
             if response.status == 429:
-                self.logger.warning(
-                    f"Rate limited on pagination: {failure.request.url}"
-                )
+                self.logger.warning(f"Rate limited on pagination: {failure.request.url}")
             else:
                 self.logger.warning(
-                    f"Pagination returned HTTP {response.status}: "
-                    f"{failure.request.url}"
+                    f"Pagination returned HTTP {response.status}: {failure.request.url}"
                 )
         else:
-            self.logger.warning(
-                f"Pagination request failed, stopping: {failure.request.url}"
-            )
+            self.logger.warning(f"Pagination request failed, stopping: {failure.request.url}")
 
     def _track_latest_published(self, post_time_str):
         if not self._latest_published:
@@ -1112,10 +1118,7 @@ class RedditSpider(scrapy.Spider):
         num_comments = json_data.get("num_comments", 0)
 
         if self.include_comments and post_id and num_comments > 0:
-            comments_url = (
-                f"https://old.reddit.com/comments/{post_id}.json"
-                f"?limit=5&raw_json=1"
-            )
+            comments_url = f"https://old.reddit.com/comments/{post_id}.json?limit=5&raw_json=1"
             post_fields = {
                 "site": self.site,
                 "url": post_url,
@@ -1180,8 +1183,7 @@ class RedditSpider(scrapy.Spider):
         content = "".join(content_parts).strip()
 
         removed_indicators = (
-            response.css("div.md::text").getall()
-            + response.css("a.author::text").getall()
+            response.css("div.md::text").getall() + response.css("a.author::text").getall()
         )
         if any("[removed]" in t or "[deleted]" in t for t in removed_indicators):
             self.logger.info(f"Skipping removed/deleted post: {response.url}")
@@ -1229,7 +1231,9 @@ class RedditSpider(scrapy.Spider):
         if len(url_parts) > 1:
             subreddit_name = url_parts[1].split("/")[0]
 
-        top_comments = [{"author": "", "body": top_comment[:500], "score": 0}] if top_comment else []
+        top_comments = (
+            [{"author": "", "body": top_comment[:500], "score": 0}] if top_comment else []
+        )
 
         post_id = ""
         url_parts_for_id = post_url.rstrip("/").split("/comments/")
