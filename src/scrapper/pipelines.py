@@ -10,7 +10,7 @@ from loguru import logger
 from scrapy.exceptions import DropItem, NotConfigured
 from supabase import create_client
 
-from .items import GenericItem, OddsItem, PostItem
+from .items import GenericItem, OddsItem, PostItem, TennisMatchItem
 
 
 class DataQualityPipeline:
@@ -159,6 +159,8 @@ class DedupInMemoryPipeline:
 class SupabasePipeline:
     """Upsert items into Supabase Postgres tables."""
 
+    # Field allowlists per item type (not table name).
+    # Table routing is by spider.name — see process_item().
     TABLE_FIELDS = {
         "posts": {
             "site",
@@ -211,6 +213,40 @@ class SupabasePipeline:
             "metadata",
             "scraped_at",
         },
+        "odds": {
+            "site",
+            "url",
+            "title",
+            "sport",
+            "league",
+            "tournament",
+            "match_date",
+            "commence_time",
+            "player_a",
+            "player_b",
+            "odds_a",
+            "odds_b",
+            "surface",
+            "market_type",
+            "quality_issues",
+            "metadata",
+            "scraped_at",
+        },
+        "tennis_match": {
+            "url",
+            "title",
+            "winner_name",
+            "loser_name",
+            "score",
+            "surface",
+            "tourney_date",
+            "tourney_level",
+            "tourney_name",
+            "round",
+            "best_of",
+            "source_url",
+            "scraped_at",
+        },
     }
 
     def __init__(self, supabase_url: str, supabase_key: str):
@@ -224,21 +260,29 @@ class SupabasePipeline:
             raise NotConfigured("SUPABASE_URL and SUPABASE_KEY are required for SupabasePipeline")
         return cls(supabase_url=supabase_url, supabase_key=supabase_key)
 
-    def _serialize_item(self, item, table: str) -> dict:
-        allowed = self.TABLE_FIELDS[table]
+    def _serialize_item(self, item, item_type: str) -> dict:
+        allowed = self.TABLE_FIELDS[item_type]
         return {key: value for key, value in dict(item).items() if key in allowed}
 
     def process_item(self, item, spider):
         if isinstance(item, GenericItem):
-            table = "scraped_pages"
+            item_type = "scraped_pages"
         elif isinstance(item, PostItem):
-            table = "posts"
+            item_type = "posts"
+        elif isinstance(item, OddsItem):
+            item_type = "odds"
+        elif isinstance(item, TennisMatchItem):
+            item_type = "tennis_match"
         else:
-            table = "products"
-        data = self._serialize_item(item, table)
+            item_type = "products"
+
+        table = spider.name
+        data = self._serialize_item(item, item_type)
+        # Pick conflict key: use site+url when both present, else url only
+        on_conflict = "site,url" if "site" in data else "url"
         for attempt in range(1, 4):
             try:
-                self.client.table(table).upsert(data, on_conflict="site,url").execute()
+                self.client.table(table).upsert(data, on_conflict=on_conflict).execute()
                 break
             except Exception as e:
                 logger.warning(
