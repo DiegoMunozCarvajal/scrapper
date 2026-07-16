@@ -68,12 +68,15 @@ def main() -> None:
     failed = []
 
     for q in queries:
+        if not isinstance(q, dict):
+            print(f"WARNING: saltando query no-dict: {q!r}", file=sys.stderr)
+            continue
         scrapy_args = build_scrapy_args(q)
         cmd = [sys.executable, "-m", "scrapy", "crawl", "reddit"] + scrapy_args
-        success = run_with_retries(cmd, max_retries=3, timeout=300)
+        success = run_with_retries(cmd, max_retries=4, timeout=300)
         if not success:
             label = q.get("subreddit", "unknown")
-            print(f"FALLÓ (tras 3 intentos): r/{label}")
+            print(f"FALLÓ (tras 4 intentos): r/{label}")
             failed.append(label)
 
     if failed:
