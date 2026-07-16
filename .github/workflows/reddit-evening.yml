@@ -1,0 +1,36 @@
+name: Reddit Evening Scraper
+on:
+  schedule:
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency: reddit-evening
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements-gha.txt
+      - name: Run reddit evening queries
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REDDIT_QUERIES: >-
+            [
+
+              {"subreddit":"AskRedditAfterDark","query":"hookup","limit":30},
+              {"subreddit":"datingoverthirty","query":"met","limit":30},
+              {"subreddit":"TrueOffMyChest","query":"hookup","limit":30},
+              {"subreddit":"AskWomenNoCensor","query":"hookup","limit":30},
+              {"subreddit":"sex","query":"hookup","limit":30},
+              {"subreddit":"offmychest","query":"hookup","limit":30},
+              {"subreddit":"confession","query":"hookup","limit":30},
+              {"subreddit":"StupidSlutsClub","query":"story","limit":30},
+              {"subreddit":"relationship_advice","limit":30}
+            ]
+        run: python run_reddit.py

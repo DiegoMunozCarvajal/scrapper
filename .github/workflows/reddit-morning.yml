@@ -1,0 +1,36 @@
+name: Reddit Morning Scraper
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency: reddit-morning
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements-gha.txt
+      - name: Run reddit morning queries
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REDDIT_QUERIES: >-
+            [
+
+              {"subreddit":"seduction","query":"field report","limit":30},
+              {"subreddit":"AskReddit","query":"flirting","limit":30},
+              {"subreddit":"dating","query":"story","limit":30},
+              {"subreddit":"Flirting","query":"number","limit":30},
+              {"subreddit":"PickUpArtist","query":"field report","limit":30},
+              {"subreddit":"dating_advice","query":"approach","limit":30},
+              {"subreddit":"AskMen","query":"flirting","limit":30},
+              {"subreddit":"AskWomen","query":"flirting","limit":30},
+              {"subreddit":"socialskills","query":"approach","limit":30}
+            ]
+        run: python run_reddit.py
