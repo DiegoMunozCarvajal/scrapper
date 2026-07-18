@@ -75,6 +75,7 @@ ITEM_PIPELINES = {
     "scrapper.pipelines.DataQualityPipeline": 150,
     "scrapper.pipelines.DedupInMemoryPipeline": 200,
     "scrapper.pipelines.SupabasePipeline": 250,
+    "scrapper.pipelines.SQLiteRedditPipeline": 260,
     "scrapper.pipelines.SQLiteOddsPipeline": 300,
 }
 
@@ -96,6 +97,7 @@ EXTENSIONS = {
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SQLITE_REDDIT_DB = os.getenv("SQLITE_REDDIT_DB", "reddit_posts.db")
 
 PROXY_LIST = os.getenv("PROXY_LIST", "")
 

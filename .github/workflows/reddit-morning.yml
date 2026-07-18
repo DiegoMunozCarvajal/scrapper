@@ -30,6 +30,7 @@ jobs:
 
 
 
+
               {"subreddit":"seduction","query":"field report","limit":30},
               {"subreddit":"AskReddit","query":"flirting","limit":30},
               {"subreddit":"dating","query":"story","limit":30},
@@ -41,8 +42,10 @@ jobs:
               {"subreddit":"socialskills","query":"approach","limit":30}
             ]
         run: python run_reddit.py
-      - name: Commit updated cutoff
+      - name: Commit scraped data
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'chore(reddit): update morning cutoff cache'
-          file_pattern: metrics/reddit_cutoff.json
+          commit_message: 'chore(reddit): update morning posts and cutoff'
+          file_pattern: |
+            reddit_posts.db
+            metrics/reddit_cutoff.json

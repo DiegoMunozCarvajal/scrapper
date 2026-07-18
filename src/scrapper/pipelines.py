@@ -379,3 +379,74 @@ class SQLiteOddsPipeline:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+
+class SQLiteRedditPipeline:
+    """Store PostItem objects in local SQLite database (reddit_posts.db)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._conn = None
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        db_path = crawler.settings.get("SQLITE_REDDIT_DB", "reddit_posts.db")
+        return cls(db_path=db_path)
+
+    @property
+    def conn(self):
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.execute(
+                """CREATE TABLE IF NOT EXISTS posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site TEXT,
+                    url TEXT UNIQUE,
+                    title TEXT,
+                    author TEXT,
+                    content TEXT,
+                    score INTEGER DEFAULT 0,
+                    comment_count INTEGER DEFAULT 0,
+                    published_at TEXT,
+                    link_flair TEXT,
+                    domain TEXT,
+                    nsfw INTEGER DEFAULT 0,
+                    is_self_post INTEGER DEFAULT 0,
+                    permalink TEXT,
+                    quality_issues TEXT DEFAULT '[]',
+                    metadata TEXT DEFAULT '{}',
+                    scraped_at TEXT
+                )"""
+            )
+            self._conn.commit()
+        return self._conn
+
+    def process_item(self, item, spider):
+        if not isinstance(item, PostItem):
+            return item
+
+        data = dict(item)
+        for f in ("quality_issues", "metadata"):
+            if f in data and not isinstance(data[f], str):
+                data[f] = json.dumps(data[f], ensure_ascii=False)
+
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join(f":{k}" for k in data)
+
+        try:
+            self.conn.execute(
+                f"INSERT OR REPLACE INTO posts ({columns}) VALUES ({placeholders})",
+                data,
+            )
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"SQLiteRedditPipeline insert failed for {item.get('url')}: {e}")
+
+        return item
+
+    def close_spider(self, spider):
+        if self._conn:
+            self._conn.close()
+            self._conn = None
