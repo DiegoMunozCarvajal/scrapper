@@ -3,6 +3,8 @@ on:
   schedule:
     - cron: '0 22 * * *'
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -10,6 +12,8 @@ jobs:
     concurrency: reddit-evening
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -17,11 +21,10 @@ jobs:
         run: pip install -r requirements-gha.txt
       - name: Run reddit evening queries
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           REDDIT_QUERIES: >-
             [
+
 
               {"subreddit":"AskRedditAfterDark","query":"hookup","limit":30},
               {"subreddit":"datingoverthirty","query":"met","limit":30},
@@ -34,3 +37,8 @@ jobs:
               {"subreddit":"relationship_advice","limit":30}
             ]
         run: python run_reddit.py
+      - name: Commit updated cutoff
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(reddit): update evening cutoff cache'
+          file_pattern: metrics/reddit_cutoff.json

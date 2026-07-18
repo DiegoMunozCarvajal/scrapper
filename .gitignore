@@ -19,7 +19,8 @@ test-results/
 *.csv
 llm_cache.db
 cookies/
-metrics/
+metrics/*
+!metrics/reddit_cutoff.json
 rag_output/
 dbs/
 eggs/
