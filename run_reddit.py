@@ -72,7 +72,15 @@ def main() -> None:
             print(f"WARNING: saltando query no-dict: {q!r}", file=sys.stderr)
             continue
         scrapy_args = build_scrapy_args(q)
-        cmd = [sys.executable, "-m", "scrapy", "crawl", "reddit"] + scrapy_args
+        cmd = [
+            sys.executable,
+            "-m",
+            "scrapy",
+            "crawl",
+            "reddit",
+            "-s",
+            "ROBOTSTXT_OBEY=False",
+        ] + scrapy_args
         success = run_with_retries(cmd, max_retries=4, timeout=300)
         if not success:
             label = q.get("subreddit", "unknown")
