@@ -18,12 +18,16 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -r requirements-gha.txt
+        run: |
+          pip install -r requirements-gha.txt
+          pip install -e "." --no-deps
       - name: Run reddit evening queries
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           REDDIT_QUERIES: >-
             [
+
+
 
 
               {"subreddit":"AskRedditAfterDark","query":"hookup","limit":30},
