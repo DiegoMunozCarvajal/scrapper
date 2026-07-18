@@ -150,3 +150,26 @@ class OddsItem(scrapy.Item):
         super().__init__(*args, **kwargs)
         if "scraped_at" not in self:
             self["scraped_at"] = datetime.now(timezone.utc).isoformat()
+
+
+class TennisMatchItem(scrapy.Item):
+    """Resultados históricos de tenis scrapeados de CoreTennis / ITF sources."""
+
+    url = scrapy.Field()  # Required by ValidatePipeline
+    title = scrapy.Field()  # Required by ValidatePipeline
+    winner_name = scrapy.Field()
+    loser_name = scrapy.Field()
+    score = scrapy.Field()
+    surface = scrapy.Field()
+    tourney_date = scrapy.Field()  # YYYYMMDD int
+    tourney_level = scrapy.Field()  # A=ATP/WTA, C=Challenger, S=Futures, J=Junior
+    tourney_name = scrapy.Field()
+    round = scrapy.Field()
+    best_of = scrapy.Field()
+    source_url = scrapy.Field()
+    scraped_at = scrapy.Field()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "scraped_at" not in self:
+            self["scraped_at"] = datetime.now(timezone.utc).isoformat()
