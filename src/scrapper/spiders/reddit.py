@@ -285,20 +285,15 @@ class RedditSpider(scrapy.Spider):
         )
 
     def _yield_initial_requests(self):
-        yield scrapy.Request(
-            "https://old.reddit.com/",
-            callback=self._health_check,
-            errback=self._health_check_error,
-            dont_filter=True,
-            meta={"health_check": True},
-        )
-
         date_from = getattr(self, "date_from", None)
         date_to = getattr(self, "date_to", None)
-        if date_from or date_to:
-            yield self._build_pullpush_request(date_from=date_from, date_to=date_to)
-        else:
-            yield self._build_json_request()
+
+        # Derive date_from from cutoff for incremental scraping via PullPush
+        if not date_from and not date_to and self._cutoff_dt:
+            date_from = self._cutoff_dt.strftime("%Y-%m-%d")
+
+        # PullPush as primary source (doesn't touch Reddit servers)
+        yield self._build_pullpush_request(date_from=date_from, date_to=date_to)
 
     async def start(self):
         await self._load_cutoff_date()
@@ -829,9 +824,9 @@ class RedditSpider(scrapy.Spider):
     def _handle_pullpush_error(self, failure):
         self.logger.warning(
             f"PullPush request failed ({failure.value}), "
-            "falling back to Reddit native scraper (no date filter)"
+            "falling back to Reddit JSON API → RSS → HTML chain"
         )
-        yield self._build_html_search_request()
+        yield self._build_json_request()
 
     def parse_rss(self, response):
         query = response.meta["query"]
