@@ -21,6 +21,7 @@ jobs:
         run: |
           pip install -r requirements-gha.txt
           pip install -e "." --no-deps
+          playwright install --with-deps chromium
       - name: Run English dating subreddit queries
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
