@@ -24,11 +24,14 @@ jobs:
           playwright install --with-deps chromium
       - name: Run English dating subreddit queries
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER }}
           DATAIMPULSE_PASSWORD: ${{ secrets.DATAIMPULSE_PASSWORD }}
           REDDIT_QUERIES: >-
             [
+
 
               {"subreddit":"dating_advice","limit":25},
               {"subreddit":"OnlineDating","limit":25},
