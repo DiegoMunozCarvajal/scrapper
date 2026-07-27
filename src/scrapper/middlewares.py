@@ -223,8 +223,9 @@ class CurlCffiMiddleware:
         # A mismatched UA (e.g. Firefox) + Chrome TLS = bot detection
         headers.pop("User-Agent", None)
 
-        proxy_url = request.meta.get("proxy")
-        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        # Skip DataImpulse proxy for Reddit — curl_cffi Chrome TLS fingerprint
+        # is sufficient. Proxy IPs are burned with Reddit (403/429).
+        proxies = None
 
         try:
             resp = curl_requests.request(
