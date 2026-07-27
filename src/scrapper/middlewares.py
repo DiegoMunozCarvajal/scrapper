@@ -170,6 +170,17 @@ class CurlCffiMiddleware:
     Returns a Response directly, skipping Scrapy's default download handler.
     """
 
+    # Domains that curl_cffi should intercept (Reddit and its CDNs)
+    REDDIT_DOMAINS = (
+        "reddit.com",
+        "old.reddit.com",
+        "www.reddit.com",
+        "oauth.reddit.com",
+        "redd.it",
+        "redditstatic.com",
+        "redditmedia.com",
+    )
+
     def __init__(self, enabled_spiders=None):
         self.enabled_spiders = enabled_spiders or ["reddit"]
 
@@ -179,10 +190,19 @@ class CurlCffiMiddleware:
             enabled_spiders=crawler.settings.getlist("CURL_CFFI_SPIDERS", ["reddit"]),
         )
 
+    @staticmethod
+    def _is_reddit_domain(url: str) -> bool:
+        from urllib.parse import urlparse
+
+        hostname = urlparse(url).hostname or ""
+        return any(
+            hostname == d or hostname.endswith("." + d) for d in CurlCffiMiddleware.REDDIT_DOMAINS
+        )
+
     def process_request(self, request, spider):
         if spider.name not in self.enabled_spiders:
             return None
-        if not request.url.startswith(("http://", "https://")):
+        if not self._is_reddit_domain(request.url):
             return None
         # Playwright requests use the browser — skip curl_cffi
         if request.meta.get("playwright"):
@@ -196,6 +216,12 @@ class CurlCffiMiddleware:
             k_str = k.decode() if isinstance(k, bytes) else k
             v = vals[0] if isinstance(vals, list) else vals
             headers[k_str] = v.decode() if isinstance(v, bytes) else v
+
+        # curl_cffi handles decompression internally — don't let Scrapy double-decompress
+        headers.pop("Accept-Encoding", None)
+        # Let curl_cffi set its own User-Agent matching the impersonated Chrome version
+        # A mismatched UA (e.g. Firefox) + Chrome TLS = bot detection
+        headers.pop("User-Agent", None)
 
         proxy_url = request.meta.get("proxy")
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
@@ -213,10 +239,15 @@ class CurlCffiMiddleware:
             logger.warning(f"curl_cffi failed for {request.url}: {e}")
             return None  # Let Scrapy fallback or errback handle
 
+        # Strip Content-Encoding so Scrapy doesn't try to decompress already-decompressed body
+        resp_headers = {k: str(v) for k, v in resp.headers.items()}
+        resp_headers.pop("Content-Encoding", None)
+        resp_headers.pop("content-encoding", None)
+
         return HtmlResponse(
             url=str(resp.url),
             status=resp.status_code,
-            headers={k.encode(): [str(v).encode()] for k, v in resp.headers.items()},
+            headers={k.encode(): [v.encode()] for k, v in resp_headers.items()},
             body=resp.content,
             request=request,
             encoding="utf-8",
