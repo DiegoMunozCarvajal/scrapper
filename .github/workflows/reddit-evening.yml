@@ -34,6 +34,7 @@ jobs:
 
 
 
+
               {"subreddit":"AskRedditAfterDark","query":"hookup","limit":30},
               {"subreddit":"datingoverthirty","query":"met","limit":30},
               {"subreddit":"TrueOffMyChest","query":"hookup","limit":30},
@@ -52,3 +53,4 @@ jobs:
           file_pattern: |
             reddit_posts.db
             metrics/reddit_cutoff.json
+            rag_output/
