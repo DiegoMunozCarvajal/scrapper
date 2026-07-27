@@ -666,6 +666,46 @@ class RedditSpider(scrapy.Spider):
             headers=_SEARCH_HEADERS,
         )
 
+    def _build_playwright_search_request(self, query=None, limit=None):
+        """Build a Playwright-powered HTML search request for Reddit fallback.
+
+        Uses a real Chromium browser with stealth patches to evade bot detection.
+        """
+        query = query if query is not None else self.query
+        limit = limit or int(getattr(self, "limit", 10))
+        time_filter = self._calculate_time_filter()
+        if self._has_query:
+            path = f"/r/{self.subreddit}/search" if self.subreddit else "/search"
+            url = self._build_reddit_base_url(
+                path=path,
+                query=query,
+                sort="new",
+                type_filter="link",
+                restrict_sr=bool(self.subreddit),
+                time_filter=time_filter,
+            )
+        else:
+            if self.sort == "new":
+                path = f"/r/{self.subreddit}/new"
+                url = self._build_reddit_base_url(path=path, sort="new")
+            else:
+                path = f"/r/{self.subreddit}/"
+                url = self._build_reddit_base_url(path=path)
+        return scrapy.Request(
+            url,
+            callback=self.parse,
+            errback=self._handle_search_error,
+            meta={
+                "query": query,
+                "limit": limit,
+                "count": 0,
+                "playwright": True,
+                "playwright_include_page": True,
+                "_use_playwright": True,
+            },
+            headers=_SEARCH_HEADERS,
+        )
+
     def _handle_search_error(self, failure):
         self.logger.error(f"Search request failed: {failure.value}")
 
@@ -824,9 +864,9 @@ class RedditSpider(scrapy.Spider):
     def _handle_pullpush_error(self, failure):
         self.logger.warning(
             f"PullPush request failed ({failure.value}), "
-            "falling back to Reddit JSON API → RSS → HTML chain"
+            "falling back to Playwright + stealth browser"
         )
-        yield self._build_json_request()
+        yield self._build_playwright_search_request()
 
     def parse_rss(self, response):
         query = response.meta["query"]
@@ -930,16 +970,20 @@ class RedditSpider(scrapy.Spider):
                     continue
 
             count += 1
+            follow_meta = {
+                "query": query,
+                "limit": limit,
+                "strategy": "html",
+                "_nsfw": card_nsfw,
+            }
+            # Propagate Playwright to post detail pages when using stealth browser
+            if response.meta.get("_use_playwright"):
+                follow_meta["playwright"] = True
             yield response.follow(
                 href,
                 callback=self.parse_post_page,
                 errback=self._handle_post_error,
-                meta={
-                    "query": query,
-                    "limit": limit,
-                    "strategy": "html",
-                    "_nsfw": card_nsfw,
-                },
+                meta=follow_meta,
                 headers=_SEARCH_HEADERS,
             )
 
@@ -962,11 +1006,15 @@ class RedditSpider(scrapy.Spider):
         if count < limit:
             next_link = response.css('a[rel="nofollow next"]::attr(href)').get()
             if next_link:
+                page_meta = {"query": query, "limit": limit, "count": count}
+                if response.meta.get("_use_playwright"):
+                    page_meta["playwright"] = True
+                    page_meta["_use_playwright"] = True
                 yield response.follow(
                     next_link,
                     callback=self.parse,
                     errback=self._handle_pagination_error,
-                    meta={"query": query, "limit": limit, "count": count},
+                    meta=page_meta,
                     headers=_SEARCH_HEADERS,
                 )
 
