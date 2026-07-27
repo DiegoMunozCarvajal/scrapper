@@ -181,13 +181,21 @@ class CurlCffiMiddleware:
         "redditmedia.com",
     )
 
-    def __init__(self, enabled_spiders=None):
+    def __init__(self, enabled_spiders=None, dataimpulse_user="", dataimpulse_password=""):
         self.enabled_spiders = enabled_spiders or ["reddit"]
+        self._dataimpulse_user = dataimpulse_user
+        self._dataimpulse_password = dataimpulse_password
+        import random as _random
+
+        # Pick one sticky port for the whole spider session (consistent residential IP)
+        self._sticky_port = _random.randint(10000, 20000)
 
     @classmethod
     def from_crawler(cls, crawler):
         return cls(
             enabled_spiders=crawler.settings.getlist("CURL_CFFI_SPIDERS", ["reddit"]),
+            dataimpulse_user=crawler.settings.get("DATAIMPULSE_USER", ""),
+            dataimpulse_password=crawler.settings.get("DATAIMPULSE_PASSWORD", ""),
         )
 
     @staticmethod
@@ -223,9 +231,10 @@ class CurlCffiMiddleware:
         # A mismatched UA (e.g. Firefox) + Chrome TLS = bot detection
         headers.pop("User-Agent", None)
 
-        # Skip DataImpulse proxy for Reddit — curl_cffi Chrome TLS fingerprint
-        # is sufficient. Proxy IPs are burned with Reddit (403/429).
-        proxies = None
+        # DataImpulse sticky session: one consistent residential IP per spider run.
+        # The rotating gateway (port 823) IPs are burned with Reddit.
+        proxy_url = f"http://{self._dataimpulse_user}:{self._dataimpulse_password}@gw.dataimpulse.com:{self._sticky_port}"
+        proxies = {"http": proxy_url, "https": proxy_url}
 
         try:
             resp = curl_requests.request(
