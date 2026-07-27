@@ -1,0 +1,55 @@
+name: Reddit Dating ES Scraper
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency: reddit-dating-es
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-gha.txt
+          pip install -e "." --no-deps
+      - name: Run Spanish dating subreddit queries
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER }}
+          DATAIMPULSE_PASSWORD: ${{ secrets.DATAIMPULSE_PASSWORD }}
+          REDDIT_QUERIES: >-
+            [
+
+              {"subreddit":"relaciones","limit":25},
+              {"subreddit":"ConsejosDePareja","limit":25},
+              {"subreddit":"Desahogo","query":"soledad","limit":25},
+              {"subreddit":"Desahogo","query":"rechazo","limit":25},
+              {"subreddit":"HistoriasDeReddit","query":"ligar","limit":25},
+              {"subreddit":"HistoriasDeReddit","query":"cita","limit":25},
+              {"subreddit":"PreguntasReddit","query":"ligar","limit":25},
+              {"subreddit":"PreguntasReddit","query":"pareja","limit":25},
+              {"subreddit":"AskRedditespanol","query":"conversación","limit":25},
+              {"subreddit":"RedditPregunta","query":"ligar","limit":25},
+              {"subreddit":"SoyElMalo","query":"relación","limit":25},
+              {"subreddit":"esConversacion","limit":25},
+              {"subreddit":"NecesitoDesahogarme","query":"pareja","limit":25},
+              {"subreddit":"espanol","limit":25}
+            ]
+        run: python run_reddit.py
+      - name: Commit scraped data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(reddit): update dating-es posts and cutoff'
+          file_pattern: |
+            reddit_posts.db
+            metrics/reddit_cutoff.json
+            rag_output/

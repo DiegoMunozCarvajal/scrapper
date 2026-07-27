@@ -1,0 +1,62 @@
+name: Reddit Dating EN Scraper
+on:
+  schedule:
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency: reddit-dating-en
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-gha.txt
+          pip install -e "." --no-deps
+      - name: Run English dating subreddit queries
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER }}
+          DATAIMPULSE_PASSWORD: ${{ secrets.DATAIMPULSE_PASSWORD }}
+          REDDIT_QUERIES: >-
+            [
+
+              {"subreddit":"dating_advice","limit":25},
+              {"subreddit":"OnlineDating","limit":25},
+              {"subreddit":"dating","limit":25},
+              {"subreddit":"Flirting","limit":25},
+              {"subreddit":"Crushes","limit":25},
+              {"subreddit":"socialskills","query":"texting anxiety","limit":25},
+              {"subreddit":"socialskills","query":"overthinking texts","limit":25},
+              {"subreddit":"AskMenAdvice","query":"texting","limit":25},
+              {"subreddit":"AskMenAdvice","query":"dating app message","limit":25},
+              {"subreddit":"AskMen","query":"texting first","limit":25},
+              {"subreddit":"Tinder","limit":25},
+              {"subreddit":"Bumble","limit":25},
+              {"subreddit":"hingeapp","limit":25},
+              {"subreddit":"OkCupid","limit":25},
+              {"subreddit":"texts","limit":25},
+              {"subreddit":"datingoverthirty","limit":25},
+              {"subreddit":"datingoverforty","limit":25},
+              {"subreddit":"relationship_advice","limit":25},
+              {"subreddit":"relationships","limit":25},
+              {"subreddit":"seduction","limit":25},
+              {"subreddit":"confidence","limit":25}
+            ]
+        run: python run_reddit.py
+      - name: Commit scraped data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(reddit): update dating-en posts and cutoff'
+          file_pattern: |
+            reddit_posts.db
+            metrics/reddit_cutoff.json
+            rag_output/

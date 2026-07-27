@@ -80,6 +80,10 @@ def main() -> None:
             "reddit",
             "-s",
             "ROBOTSTXT_OBEY=False",
+            "-s",
+            "CONCURRENT_REQUESTS=4",
+            "-s",
+            "AUTOTHROTTLE_TARGET_CONCURRENCY=2.0",
         ] + scrapy_args
         success = run_with_retries(cmd, max_retries=4, timeout=300)
         if not success:
