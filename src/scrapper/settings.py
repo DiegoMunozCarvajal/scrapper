@@ -87,7 +87,11 @@ DOWNLOADER_MIDDLEWARES = {
     "scrapper.middlewares.ProxyRotationMiddleware": 100,
     "scrapper.middlewares.RetryWithBackoffMiddleware": 550,
     "scrapper.middlewares.UARotationMiddleware": 850,
+    "scrapper.middlewares.CurlCffiMiddleware": 900,
 }
+
+# Spiders that use curl_cffi for TLS fingerprint impersonation (Chrome 124)
+CURL_CFFI_SPIDERS = ["reddit"]
 
 EXTENSIONS = {
     "scrapper.extensions.StatsLogger": 400,

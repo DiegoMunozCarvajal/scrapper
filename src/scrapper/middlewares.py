@@ -40,7 +40,9 @@ class RetryWithBackoffMiddleware(RetryMiddleware):
         return response
 
     def process_exception(self, request, exception, spider):
-        if isinstance(exception, self.exceptions_to_retry) and not request.meta.get("dont_retry", False):
+        if isinstance(exception, self.exceptions_to_retry) and not request.meta.get(
+            "dont_retry", False
+        ):
             retry_request = self._retry(request, exception)
             if retry_request is not None:
                 return retry_request
@@ -109,9 +111,7 @@ class ProxyRotationMiddleware:
         return result
 
     def _pick_proxy(self) -> str | None:
-        healthy = [
-            p for p in self.proxies if self.failed_proxies.get(p, 0) < self.MAX_FAILS
-        ]
+        healthy = [p for p in self.proxies if self.failed_proxies.get(p, 0) < self.MAX_FAILS]
         if healthy:
             return random.choice(healthy)
         # If every proxy is marked failed, reset and try again
@@ -160,3 +160,64 @@ class UARotationMiddleware:
             context_kwargs["user_agent"] = ua
 
         return None
+
+
+class CurlCffiMiddleware:
+    """Downloader middleware: replace default download handler with curl_cffi.
+
+    Impersonates Chrome 124 TLS fingerprint to evade anti-bot detection.
+    Only activates for configured spiders (default: 'reddit').
+    Returns a Response directly, skipping Scrapy's default download handler.
+    """
+
+    def __init__(self, enabled_spiders=None):
+        self.enabled_spiders = enabled_spiders or ["reddit"]
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            enabled_spiders=crawler.settings.getlist("CURL_CFFI_SPIDERS", ["reddit"]),
+        )
+
+    def process_request(self, request, spider):
+        if spider.name not in self.enabled_spiders:
+            return None
+        if not request.url.startswith(("http://", "https://")):
+            return None
+        # Playwright requests use the browser — skip curl_cffi
+        if request.meta.get("playwright"):
+            return None
+
+        from curl_cffi import requests as curl_requests
+        from scrapy.http import HtmlResponse
+
+        headers = {}
+        for k, vals in request.headers.items():
+            k_str = k.decode() if isinstance(k, bytes) else k
+            v = vals[0] if isinstance(vals, list) else vals
+            headers[k_str] = v.decode() if isinstance(v, bytes) else v
+
+        proxy_url = request.meta.get("proxy")
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+        try:
+            resp = curl_requests.request(
+                method=request.method,
+                url=request.url,
+                headers=headers,
+                proxies=proxies,
+                impersonate="chrome124",
+                timeout=30,
+            )
+        except Exception as e:
+            logger.warning(f"curl_cffi failed for {request.url}: {e}")
+            return None  # Let Scrapy fallback or errback handle
+
+        return HtmlResponse(
+            url=str(resp.url),
+            status=resp.status_code,
+            headers={k.encode(): [str(v).encode()] for k, v in resp.headers.items()},
+            body=resp.content,
+            request=request,
+            encoding="utf-8",
+        )
