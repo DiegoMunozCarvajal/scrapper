@@ -285,15 +285,9 @@ class RedditSpider(scrapy.Spider):
         )
 
     def _yield_initial_requests(self):
-        date_from = getattr(self, "date_from", None)
-        date_to = getattr(self, "date_to", None)
-
-        # Derive date_from from cutoff for incremental scraping via PullPush
-        if not date_from and not date_to and self._cutoff_dt:
-            date_from = self._cutoff_dt.strftime("%Y-%m-%d")
-
-        # PullPush as primary source (doesn't touch Reddit servers)
-        yield self._build_pullpush_request(date_from=date_from, date_to=date_to)
+        # Primary: direct old.reddit.com JSON API via curl_cffi + DataImpulse proxy
+        # Falls back to Playwright + stealth browser on error
+        yield self._build_json_request()
 
     async def start(self):
         await self._load_cutoff_date()
@@ -375,8 +369,10 @@ class RedditSpider(scrapy.Spider):
         posts = [p for p in children if p.get("kind") == "t3"]
 
         if not posts:
-            self.logger.info("JSON API: no posts found, falling through to fallback")
-            yield self._continue_to_full_search()
+            self.logger.info(
+                "JSON API: no posts found, falling back to Playwright + stealth browser"
+            )
+            yield self._build_playwright_search_request()
             return
 
         query = response.meta["query"]
@@ -428,8 +424,10 @@ class RedditSpider(scrapy.Spider):
             if skipped_old > 0:
                 self.logger.info(f"JSON API: all {skipped_old} posts older than cutoff, stopping")
                 return
-            self.logger.warning("JSON API: no usable posts, falling through to HTML search")
-            yield self._build_html_search_request()
+            self.logger.warning(
+                "JSON API: no usable posts, falling back to Playwright + stealth browser"
+            )
+            yield self._build_playwright_search_request()
             return
 
         after_fullname = data.get("data", {}).get("after")
@@ -627,9 +625,9 @@ class RedditSpider(scrapy.Spider):
 
     def _json_request_error(self, failure):
         self.logger.warning(
-            f"JSON request failed ({failure.value}), falling through to full search"
+            f"JSON request failed ({failure.value}), falling back to Playwright + stealth browser"
         )
-        yield self._continue_to_full_search()
+        yield self._build_playwright_search_request()
 
     def _continue_to_full_search(self):
         rss_enabled = self.settings.getbool("REDDIT_RSS_ENABLED", True)
