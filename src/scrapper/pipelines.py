@@ -290,7 +290,6 @@ class SupabasePipeline:
                 )
                 if attempt == 3:
                     logger.error(f"Supabase upsert FAILED after 3 retries for {item.get('url')}")
-                    raise DropItem(f"Supabase upsert failed after 3 attempts: {item.get('url')}")
         return item
 
     def close_spider(self, spider):

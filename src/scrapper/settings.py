@@ -74,8 +74,8 @@ ITEM_PIPELINES = {
     "scrapper.pipelines.ValidatePipeline": 100,
     "scrapper.pipelines.DataQualityPipeline": 150,
     "scrapper.pipelines.DedupInMemoryPipeline": 200,
+    "scrapper.pipelines.SQLiteRedditPipeline": 240,
     "scrapper.pipelines.SupabasePipeline": 250,
-    "scrapper.pipelines.SQLiteRedditPipeline": 260,
     "scrapper.pipelines.SQLiteOddsPipeline": 300,
 }
 
