@@ -18,9 +18,11 @@ _COOKIE_DIR = Path(__file__).parent.parent.parent / "cookies"
 # to the old API (Stealth + apply_stealth_async).
 try:
     from playwright_stealth import StealthConfig, stealth_async
+
     _NEW_STEALTH_API = True
 except ImportError:
     from playwright_stealth import Stealth
+
     StealthConfig = Stealth  # noqa: N811
     _NEW_STEALTH_API = False
 
@@ -77,7 +79,9 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
         context_kwargs = context_kwargs or {}
 
         cookie_persist = os.getenv("COOKIE_PERSIST_ENABLED", "true").lower() in (
-            "true", "1", "yes",
+            "true",
+            "1",
+            "yes",
         )
         if cookie_persist:
             cookie_file = _COOKIE_DIR / f"{name}.json"
@@ -90,6 +94,7 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
 
         if cookie_persist:
             import asyncio
+
             async def save_on_close(ctx):
                 try:
                     await _save_storage_state(ctx, _COOKIE_DIR / f"{name}.json")
@@ -107,16 +112,17 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
                 try:
                     task = loop.create_task(save_on_close(ctx))
                 except RuntimeError:
-                    logger.warning(
-                        f"Cannot schedule cookie save for '{name}': event loop closed"
-                    )
+                    logger.warning(f"Cannot schedule cookie save for '{name}': event loop closed")
                     return
                 task.add_done_callback(
-                    lambda t: logger.warning(
-                        f"Cookie save for context '{name}' failed: {t.exception()}"
-                    ) if t.exception() else None
+                    lambda t: (
+                        logger.warning(f"Cookie save for context '{name}' failed: {t.exception()}")
+                        if t.exception()
+                        else None
+                    )
                 )
-            context.on("close", _schedule_cookie_save)
+
+            context.context.on("close", _schedule_cookie_save)
 
         return context
 
@@ -127,7 +133,11 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
             stealth = Stealth()
             await stealth.apply_stealth_async(page)
 
-        human_simulation = os.getenv("PLAYWRIGHT_HUMAN_SIMULATION", "true").lower() in ("true", "1", "yes")
+        human_simulation = os.getenv("PLAYWRIGHT_HUMAN_SIMULATION", "true").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
         if human_simulation:
             await page.add_init_script(_CANVAS_WEBGL_INIT_SCRIPT)
 
@@ -146,6 +156,7 @@ class ScrapyPlaywrightStealthDownloadHandler(ScrapyPlaywrightDownloadHandler):
     async def _simulate_human_scroll(self, page: Page, url: str) -> None:
         try:
             import random
+
             for _ in range(random.randint(2, 4)):
                 await page.evaluate(f"window.scrollBy(0, {random.randint(100, 400)})")
                 await page.wait_for_timeout(random.randint(200, 800))
