@@ -285,9 +285,9 @@ class RedditSpider(scrapy.Spider):
         )
 
     def _yield_initial_requests(self):
-        # Primary: direct old.reddit.com JSON API via curl_cffi + DataImpulse proxy
-        # Falls back to Playwright + stealth browser on error
-        yield self._build_json_request()
+        # Primary: Playwright + stealth browser via DataImpulse US proxy
+        # Falls back to curl_cffi JSON API on error
+        yield self._build_playwright_search_request()
 
     async def start(self):
         await self._load_cutoff_date()
@@ -624,10 +624,10 @@ class RedditSpider(scrapy.Spider):
         return "nsfw" in marker_text or "over 18" in marker_text
 
     def _json_request_error(self, failure):
-        self.logger.warning(
-            f"JSON request failed ({failure.value}), falling back to Playwright + stealth browser"
+        self.logger.error(
+            f"JSON API fallback also failed ({failure.value}). "
+            "Both Playwright and curl_cffi approaches exhausted."
         )
-        yield self._build_playwright_search_request()
 
     def _continue_to_full_search(self):
         rss_enabled = self.settings.getbool("REDDIT_RSS_ENABLED", True)
@@ -705,7 +705,10 @@ class RedditSpider(scrapy.Spider):
         )
 
     def _handle_search_error(self, failure):
-        self.logger.error(f"Search request failed: {failure.value}")
+        self.logger.warning(
+            f"Playwright search failed ({failure.value}), falling back to curl_cffi JSON API"
+        )
+        yield self._build_json_request()
 
     def _fallback_to_search(self, failure):
         yield self._build_html_search_request(
